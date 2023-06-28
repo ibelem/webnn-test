@@ -1,0 +1,36 @@
+{
+  "enviroment": {
+    "cpu": "Intel(R) Core(TM) i7-8665U CPU @ 1.90GHz 2.11 GHz",
+    "ram": "24.0 GB",
+    "gpu": "Intel UHD Graphics 620 31.0.101.2111",
+    "os": "Windows 10 Enterprise 22H2 19045.3086"
+  },
+  "browser": {
+    "name": "Chrome Canary",
+    "build": "117.0.5857.0",
+    "path": "C:/Users/zhangmin/AppData/Local/Google/Chrome SxS/Application/chrome.exe",
+    "flags": "--enable-experimental-web-platform-features"
+  },
+  "backends": [
+    "Wasm SIMD",
+    "WebNN"
+  ],
+  "url": "https://honry.github.io/tfjs/e2e/benchmarks/local-benchmark/index.html",
+  "models": [
+    {
+      "category": "Object Detection",
+      "model": "EfficientDet-Lite0 (float 32)",
+      "url": "https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite0/float16/latest/efficientdet_lite0.tflite"
+    },
+    {
+      "category": "Face Detection",
+      "model": "EfficientDet-Lite2 (float 32)",
+      "url": "https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite2/float32/latest/efficientdet_lite2.tflite"
+    },
+    {
+      "category": "Face Detection",
+      "model": "SSDMobileNet-V2 (float 32)",
+      "url": "https://storage.googleapis.com/mediapipe-models/object_detector/ssd_mobilenet_v2/float32/latest/ssd_mobilenet_v2.tflite"
+    }
+  ]
+}

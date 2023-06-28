@@ -1,0 +1,27 @@
+{
+  "name": "webnn-test",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "test": "node index.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ibelem/webnn-test.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/ibelem/webnn-test/issues"
+  },
+  "homepage": "https://github.com/ibelem/webnn-test#readme",
+  "devDependencies": {
+    "@playwright/test": "^1.35.1"
+  },
+  "dependencies": {
+    "playwright": "^1.35.1"
+  }
+}
