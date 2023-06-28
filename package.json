@@ -18,9 +18,6 @@
     "url": "https://github.com/ibelem/webnn-test/issues"
   },
   "homepage": "https://github.com/ibelem/webnn-test#readme",
-  "devDependencies": {
-    "@playwright/test": "^1.35.1"
-  },
   "dependencies": {
     "playwright": "^1.35.1"
   }

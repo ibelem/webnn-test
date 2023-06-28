@@ -4,10 +4,10 @@
 
 ### Config
 
-Edit `config.json` to update following information
+Edit `config.json`:
 - Environment infomation
 - Browser infomation, e.g. installed path
-- MediaPipe Models
+- MediaPipe models and links
 
 ### How to Run
 
