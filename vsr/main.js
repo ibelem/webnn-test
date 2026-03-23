@@ -452,6 +452,7 @@ async function loadModel(modelData, modelName) {
 
         // Get execution provider configuration
         const options = getSessionOptions();
+        ort.env.logLevel = "verbose";
         
         logInfo(`Loading model: ${modelName}...`);
         const startTime = performance.now();
