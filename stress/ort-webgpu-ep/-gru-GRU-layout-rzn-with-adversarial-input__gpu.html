@@ -1,0 +1,589 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>[gru] GRU layout=rzn with adversarial input — Error</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; }
+
+  :root {
+    --c-bg: #f4f5f7;
+    --c-surface: #ffffff;
+    --c-border: #e2e4e9;
+    --c-text: #1a1d26;
+    --c-text-2: #555b6e;
+    --c-text-3: #8a90a0;
+    --c-accent: #07047F;
+    --c-accent-light: #1C39C2;
+    --c-status: #CD4B4C;
+    --mono: 'SF Mono', 'Fira Code', 'Cascadia Code', 'JetBrains Mono', Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    --radius: 5px;
+  }
+
+  body {
+    font-family: var(--sans);
+    background: var(--c-bg);
+    color: var(--c-text);
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ─── Header ─── */
+  .header {
+    background: linear-gradient(135deg, #040255 0%, #07047F 50%, #1C39C2 100%);
+    color: #fff;
+    padding: 40px 32px 32px;
+    position: relative;
+    overflow: hidden;
+  }
+  .header::after {
+    content: '';
+    position: absolute;
+    top: -60%;
+    right: -10%;
+    width: 400px;
+    height: 400px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(77, 209, 255, 0.08) 0%, transparent 70%);
+    pointer-events: none;
+  }
+  .header-inner {
+    max-width: 960px;
+    margin: 0 auto;
+    position: relative;
+    z-index: 1;
+  }
+  .header-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-bottom: 16px;
+  }
+  .status-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 14px;
+    border-radius: 20px;
+    font-size: 13px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    background: var(--c-status);
+    color: #fff;
+  }
+  .device-pill {
+    display: inline-block;
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    border: 1px solid rgba(255,255,255,0.25);
+    color: rgba(255,255,255,0.9);
+  }
+  .device-pill.cpu { background: rgba(0, 200, 167, 0.15); border-color: rgba(0, 200, 167, 0.4); }
+  .device-pill.gpu { background: rgba(77, 209, 255, 0.15); border-color: rgba(77, 209, 255, 0.4); }
+  .device-pill.npu { background: rgba(167, 139, 250, 0.15); border-color: rgba(167, 139, 250, 0.4); }
+  .header h1 {
+    font-size: 20px;
+    font-weight: 700;
+    line-height: 1.3;
+    margin-bottom: 20px;
+    color: #fff;
+  }
+  .header-meta {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 8px 24px;
+    font-size: 13px;
+    color: rgba(255,255,255,0.7);
+  }
+  .header-meta strong { color: #4DD1FF; font-weight: 500; }
+
+  /* ─── Error callout ─── */
+  .error-callout {
+    max-width: 960px;
+    margin: -20px auto 0;
+    padding: 0 24px;
+    position: relative;
+    z-index: 2;
+  }
+  .error-callout-inner {
+    background: #fff;
+    border-left: 4px solid var(--c-status);
+    border-radius: var(--radius);
+    padding: 16px 20px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+  }
+  .error-callout-inner .label {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--c-status);
+    margin-bottom: 6px;
+  }
+  .error-callout-inner pre {
+    font-family: var(--mono);
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--c-text);
+    white-space: pre-wrap;
+    word-break: break-word;
+    margin: 0;
+  }
+
+  /* ─── Main content ─── */
+  .main {
+    max-width: 960px;
+    margin: 0 auto;
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+
+  /* ─── Cards ─── */
+  .card {
+    background: var(--c-surface);
+    border: 1px solid var(--c-border);
+    border-radius: var(--radius);
+    padding: 24px;
+  }
+  .card h2 {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--c-accent);
+    margin-bottom: 16px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--c-border);
+  }
+  .hint {
+    font-size: 13px;
+    color: var(--c-text-3);
+    margin-bottom: 14px;
+  }
+
+  /* ─── Launch flags ─── */
+  .flags {
+    background: #0d0d1a;
+    border-radius: 8px;
+    padding: 14px 16px;
+    font-family: var(--mono);
+    font-size: 12px;
+    line-height: 1.7;
+    color: #90ee90;
+    white-space: pre-wrap;
+    word-break: break-all;
+    overflow-x: auto;
+  }
+
+  /* ─── Detail grid ─── */
+  .detail-grid {
+    display: grid;
+    grid-template-columns: 120px 1fr;
+    gap: 4px 16px;
+    font-size: 13px;
+  }
+  .detail-grid dt {
+    font-weight: 600;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--c-text-3);
+    padding-top: 2px;
+  }
+  .detail-grid dd { color: var(--c-text); }
+  .status-dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--c-status);
+    margin-right: 6px;
+    vertical-align: middle;
+  }
+
+  /* ─── Code / Log blocks ─── */
+  .code, .log {
+    background: #0d0d1a;
+    border-radius: 8px;
+    padding: 16px;
+    font-family: var(--mono);
+    font-size: 12px;
+    line-height: 1.6;
+    white-space: pre-wrap;
+    word-break: break-word;
+    overflow-y: auto;
+    max-height: 500px;
+    color: #d4d4d8;
+    margin: 0;
+  }
+  .log { max-height: 300px; color: #a1a1aa; }
+
+  /* ─── Run section ─── */
+  .run-card { border: 1px solid var(--c-accent); border-top: 3px solid var(--c-accent); }
+  .run-card button {
+    padding: 10px 28px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    background: var(--c-accent);
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    transition: background 0.15s ease, transform 0.1s ease;
+  }
+  .run-card button:hover { background: var(--c-accent-light); }
+  .run-card button:active { transform: scale(0.97); }
+  .output {
+    background: #0d0d1a;
+    border-radius: 8px;
+    padding: 14px 16px;
+    font-family: var(--mono);
+    font-size: 13px;
+    line-height: 1.5;
+    color: #a1a1aa;
+    margin-top: 14px;
+    min-height: 44px;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  /* ─── Footer ─── */
+  .footer {
+    text-align: center;
+    padding: 24px;
+    font-size: 11px;
+    color: var(--c-text-3);
+  }
+
+  /* ─── Responsive ─── */
+  @media (max-width: 640px) {
+    .header { padding: 28px 20px 24px; }
+    .header h1 { font-size: 17px; }
+    .header-meta { grid-template-columns: 1fr; }
+    .main { padding: 16px; }
+    .card { padding: 18px; }
+    .detail-grid { grid-template-columns: 100px 1fr; }
+    .error-callout { padding: 0 16px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-inner">
+    <div class="header-row">
+      <span class="status-pill">&#x2717; Error</span>
+      <span class="device-pill gpu">gpu</span>
+    </div>
+    <h1>[gru] GRU layout=rzn with adversarial input</h1>
+    <div class="header-meta">
+      <div><strong>Profile</strong> ort-default-gpu-dev</div>
+      <div><strong>Operator</strong> gru</div>
+      <div><strong>Duration</strong> 8 ms</div>
+      <div><strong>Timestamp</strong> 2026-03-24T13:44:03.898Z</div>
+    </div>
+  </div>
+</div>
+
+<div class="error-callout">
+  <div class="error-callout-inner">
+    <div class="label">Error</div>
+    <pre>Failed to execute 'build' on 'MLGraphBuilder': Failed to create session.</pre>
+  </div>
+</div>
+
+<div class="main">
+
+  <section class="card">
+    <h2>Launch Flags</h2>
+    <p class="hint">Launch Chrome/Edge with these flags to reproduce.</p>
+    <pre class="flags">--enable-features=WebMachineLearningNeuralNetwork \
+  --allow-third-party-modules \
+  --webnn-ort-library-path-for-testing=C:\Program Files\ORT-16b556d \
+  --webnn-ort-ep-library-path-for-testing=OpenVINOExecutionProvider?fakepath \
+  --webnn-ort-ep-device=WebGpuExecutionProvider,0x8086,7D51</pre>
+  </section>
+
+  <section class="card">
+    <h2>Test Details</h2>
+    <dl class="detail-grid">
+      <dt>Operator</dt><dd>gru</dd>
+      <dt>Test Name</dt><dd>[gru] GRU layout=rzn with adversarial input</dd>
+      <dt>Status</dt><dd><span class="status-dot"></span>error</dd>
+      <dt>Device</dt><dd>GPU</dd>
+      <dt>Duration</dt><dd>8 ms</dd>
+      <dt>Profile</dt><dd>ort-default-gpu-dev</dd>
+    </dl>
+  </section>
+
+  <section class="card">
+    <h2>GPU Logs</h2>
+    <pre class="log">[40572:16720:0324/214402.596:ERROR:services\webnn\ort\environment.cc:568] : [WebNN] Failed to call ort_api-&gt;RegisterExecutionProviderLibrary( env.get(), ep_path_info.first.c_str(), ep_path_info.second.value().c_str()): [WebNN] ORT status error code: 1 error message: Error loading &quot;C:\Program Files\ORT-16b556d\fakepath&quot; which is missing. (Error 126: &quot;找不到指定的模块。&quot;)
+[40572:7496:0324/214403.746:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [ERROR: onnxruntime, inference_session.cc:2545 onnxruntime::InferenceSession::Initialize::&lt;lambda_6d179ca93a662fa4d82ce52dff26ecbb&gt;::operator ()] Exception during initialization: C:\workspace\onnxruntime\onnxruntime\core/framework/execution_frame.h:112 onnxruntime::IExecutionFrame::GetMLValue ort_value_index &gt;= 0 &amp;&amp; static_cast&lt;size_t&gt;(ort_value_index) &lt; all_values_size_ was false.
+[40572:7496:0324/214403.747:ERROR:services\webnn\ort\graph_impl_ort.cc:185] : [WebNN] Failed to call ort_model_editor_api-&gt;CreateSessionFromModel( env-&gt;get(), model_info-&gt;model.get(), session_options-&gt;get(), ScopedOrtSession::Receiver(session).get()): [WebNN] ORT status error code: 6 error message: Exception during initialization: C:\workspace\onnxruntime\onnxruntime\core/framework/execution_frame.h:112 onnxruntime::IExecutionFrame::GetMLValue ort_value_index &gt;= 0 &amp;&amp; static_cast&lt;size_t&gt;(ort_value_index) &lt; all_values_size_ was false.</pre>
+  </section>
+  
+
+  
+  <section class="card">
+    <h2>Reproduction Script</h2>
+    <p class="hint">Pure WebNN API code — paste into DevTools or use the Run button below.</p>
+    <pre class="code">'use strict';
+
+// ===== Constants =====
+const INT32_MAX = 2147483647;
+const UINT32_MAX = 4294967295;
+const FLOAT32_MAX = 3.4028235e+38;
+const FLOAT32_MIN_SUBNORMAL = 1.401298464324817e-45;
+const FLOAT32_MIN_NORMAL = 1.1754943508222875e-38;
+
+// ===== Data-creation helpers =====
+
+function filledFloat32(shape, value) {
+  const size = Array.isArray(shape) ? shape.reduce((a, b) =&gt; a * b, 1) : shape;
+  return new Float32Array(size).fill(value);
+}
+
+function randomFloat32(shape) {
+  const size = Array.isArray(shape) ? shape.reduce((a, b) =&gt; a * b, 1) : shape;
+  const arr = new Float32Array(size);
+  for (let i = 0; i &lt; size; i++) arr[i] = Math.random() * 2 - 1;
+  return arr;
+}
+
+function adversarialFloat32(shape) {
+  const size = Array.isArray(shape) ? shape.reduce((a, b) =&gt; a * b, 1) : shape;
+  const specials = [
+    NaN, Infinity, -Infinity, 0, -0,
+    FLOAT32_MAX, -FLOAT32_MAX,
+    FLOAT32_MIN_SUBNORMAL, -FLOAT32_MIN_SUBNORMAL,
+    FLOAT32_MIN_NORMAL, -FLOAT32_MIN_NORMAL,
+    1.0, -1.0, 0.5, -0.5,
+  ];
+  const arr = new Float32Array(size);
+  for (let i = 0; i &lt; size; i++) arr[i] = specials[i % specials.length];
+  return arr;
+}
+
+function filledInt32(shape, value) {
+  const size = Array.isArray(shape) ? shape.reduce((a, b) =&gt; a * b, 1) : shape;
+  return new Int32Array(size).fill(value);
+}
+
+function filledUint8(shape, value) {
+  const size = Array.isArray(shape) ? shape.reduce((a, b) =&gt; a * b, 1) : shape;
+  return new Uint8Array(size).fill(value);
+}
+
+function filledInt8(shape, value) {
+  const size = Array.isArray(shape) ? shape.reduce((a, b) =&gt; a * b, 1) : shape;
+  return new Int8Array(size).fill(value);
+}
+
+function filledUint32(shape, value) {
+  const size = Array.isArray(shape) ? shape.reduce((a, b) =&gt; a * b, 1) : shape;
+  return new Uint32Array(size).fill(value);
+}
+
+function interleavedSubnormalFloat32(shape) {
+  const size = Array.isArray(shape) ? shape.reduce((a, b) =&gt; a * b, 1) : shape;
+  const arr = new Float32Array(size);
+  for (let i = 0; i &lt; size; i++) {
+    arr[i] = i % 2 === 0 ? 1.0 : FLOAT32_MIN_SUBNORMAL;
+  }
+  return arr;
+}
+
+function tiledFloat32(shape, values) {
+  const size = Array.isArray(shape) ? shape.reduce((a, b) =&gt; a * b, 1) : shape;
+  const arr = new Float32Array(size);
+  for (let i = 0; i &lt; size; i++) arr[i] = values[i % values.length];
+  return arr;
+}
+
+// ===== Reproduction test =====
+
+async function runTest() {
+  const context = await navigator.ml.createContext({ deviceType: 'gpu' });
+  try {
+    const steps = 2, batchSize = 1, inputSize = 4, hiddenSize = 4;
+      {
+    const builder = new MLGraphBuilder(context);
+    const input = builder.constant(
+              { dataType: 'float32', shape: [steps, batchSize, inputSize] },
+              adversarialFloat32([steps, batchSize, inputSize]));
+            const weight = builder.constant(
+              { dataType: 'float32', shape: [1, 3 * hiddenSize, inputSize] },
+              filledFloat32([1, 3 * hiddenSize, inputSize], 0.1));
+            const recurrentWeight = builder.constant(
+              { dataType: 'float32', shape: [1, 3 * hiddenSize, hiddenSize] },
+              filledFloat32([1, 3 * hiddenSize, hiddenSize], 0.1));
+            const outputs = builder.gru(input, weight, recurrentWeight, steps, hiddenSize, {
+              layout: 'rzn',
+            });
+    const outputOperand = outputs[0];
+    const graph = await builder.build({ output: outputOperand });
+    const outputTensor = await context.createTensor({
+      dataType: outputOperand.dataType,
+      shape: Array.from(outputOperand.shape),
+      readable: true,
+    });
+    try {
+      context.dispatch(graph, {}, { output: outputTensor });
+      const result = await context.readTensor(outputTensor);
+    } finally {
+      outputTensor.destroy();
+      graph.destroy();
+    }
+  }
+    document.getElementById('result').textContent = 'Test completed (no crash)';
+  } catch (e) {
+    document.getElementById('result').textContent = 'Error: ' + e.message;
+    throw e;
+  } finally {
+    try { context.destroy(); } catch(e) { /* ignore */ }
+  }
+}
+
+runTest();</pre>
+  </section>
+
+  <section class="card run-card">
+    <h2>&#9654; Run Test</h2>
+    <p class="hint">Click the button or open this page in Chrome with the launch flags above.</p>
+    <button id="runBtn" onclick="runTest()">Run Test</button>
+    <pre id="result" class="output">Ready to run…</pre>
+  </section>
+</div>
+<script>
+'use strict';
+
+// ===== Constants =====
+const INT32_MAX = 2147483647;
+const UINT32_MAX = 4294967295;
+const FLOAT32_MAX = 3.4028235e+38;
+const FLOAT32_MIN_SUBNORMAL = 1.401298464324817e-45;
+const FLOAT32_MIN_NORMAL = 1.1754943508222875e-38;
+
+// ===== Data-creation helpers =====
+
+function filledFloat32(shape, value) {
+  const size = Array.isArray(shape) ? shape.reduce((a, b) => a * b, 1) : shape;
+  return new Float32Array(size).fill(value);
+}
+
+function randomFloat32(shape) {
+  const size = Array.isArray(shape) ? shape.reduce((a, b) => a * b, 1) : shape;
+  const arr = new Float32Array(size);
+  for (let i = 0; i < size; i++) arr[i] = Math.random() * 2 - 1;
+  return arr;
+}
+
+function adversarialFloat32(shape) {
+  const size = Array.isArray(shape) ? shape.reduce((a, b) => a * b, 1) : shape;
+  const specials = [
+    NaN, Infinity, -Infinity, 0, -0,
+    FLOAT32_MAX, -FLOAT32_MAX,
+    FLOAT32_MIN_SUBNORMAL, -FLOAT32_MIN_SUBNORMAL,
+    FLOAT32_MIN_NORMAL, -FLOAT32_MIN_NORMAL,
+    1.0, -1.0, 0.5, -0.5,
+  ];
+  const arr = new Float32Array(size);
+  for (let i = 0; i < size; i++) arr[i] = specials[i % specials.length];
+  return arr;
+}
+
+function filledInt32(shape, value) {
+  const size = Array.isArray(shape) ? shape.reduce((a, b) => a * b, 1) : shape;
+  return new Int32Array(size).fill(value);
+}
+
+function filledUint8(shape, value) {
+  const size = Array.isArray(shape) ? shape.reduce((a, b) => a * b, 1) : shape;
+  return new Uint8Array(size).fill(value);
+}
+
+function filledInt8(shape, value) {
+  const size = Array.isArray(shape) ? shape.reduce((a, b) => a * b, 1) : shape;
+  return new Int8Array(size).fill(value);
+}
+
+function filledUint32(shape, value) {
+  const size = Array.isArray(shape) ? shape.reduce((a, b) => a * b, 1) : shape;
+  return new Uint32Array(size).fill(value);
+}
+
+function interleavedSubnormalFloat32(shape) {
+  const size = Array.isArray(shape) ? shape.reduce((a, b) => a * b, 1) : shape;
+  const arr = new Float32Array(size);
+  for (let i = 0; i < size; i++) {
+    arr[i] = i % 2 === 0 ? 1.0 : FLOAT32_MIN_SUBNORMAL;
+  }
+  return arr;
+}
+
+function tiledFloat32(shape, values) {
+  const size = Array.isArray(shape) ? shape.reduce((a, b) => a * b, 1) : shape;
+  const arr = new Float32Array(size);
+  for (let i = 0; i < size; i++) arr[i] = values[i % values.length];
+  return arr;
+}
+
+// ===== Reproduction test =====
+
+async function runTest() {
+  const context = await navigator.ml.createContext({ deviceType: 'gpu' });
+  try {
+    const steps = 2, batchSize = 1, inputSize = 4, hiddenSize = 4;
+      {
+    const builder = new MLGraphBuilder(context);
+    const input = builder.constant(
+              { dataType: 'float32', shape: [steps, batchSize, inputSize] },
+              adversarialFloat32([steps, batchSize, inputSize]));
+            const weight = builder.constant(
+              { dataType: 'float32', shape: [1, 3 * hiddenSize, inputSize] },
+              filledFloat32([1, 3 * hiddenSize, inputSize], 0.1));
+            const recurrentWeight = builder.constant(
+              { dataType: 'float32', shape: [1, 3 * hiddenSize, hiddenSize] },
+              filledFloat32([1, 3 * hiddenSize, hiddenSize], 0.1));
+            const outputs = builder.gru(input, weight, recurrentWeight, steps, hiddenSize, {
+              layout: 'rzn',
+            });
+    const outputOperand = outputs[0];
+    const graph = await builder.build({ output: outputOperand });
+    const outputTensor = await context.createTensor({
+      dataType: outputOperand.dataType,
+      shape: Array.from(outputOperand.shape),
+      readable: true,
+    });
+    try {
+      context.dispatch(graph, {}, { output: outputTensor });
+      const result = await context.readTensor(outputTensor);
+    } finally {
+      outputTensor.destroy();
+      graph.destroy();
+    }
+  }
+    document.getElementById('result').textContent = 'Test completed (no crash)';
+  } catch (e) {
+    document.getElementById('result').textContent = 'Error: ' + e.message;
+    throw e;
+  } finally {
+    try { context.destroy(); } catch(e) { /* ignore */ }
+  }
+}
+
+runTest();
+</script>
+
+<div class="footer">WebNN WPT Stress Test &middot; Generated 2026-03-24T13:44:03.906Z</div>
+</body>
+</html>

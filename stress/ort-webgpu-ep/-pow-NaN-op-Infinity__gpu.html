@@ -1,0 +1,664 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>[pow] NaN op Infinity — Security</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; }
+
+  :root {
+    --c-bg: #f4f5f7;
+    --c-surface: #ffffff;
+    --c-border: #e2e4e9;
+    --c-text: #1a1d26;
+    --c-text-2: #555b6e;
+    --c-text-3: #8a90a0;
+    --c-accent: #07047F;
+    --c-accent-light: #1C39C2;
+    --c-status: #6B0008;
+    --mono: 'SF Mono', 'Fira Code', 'Cascadia Code', 'JetBrains Mono', Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    --radius: 5px;
+  }
+
+  body {
+    font-family: var(--sans);
+    background: var(--c-bg);
+    color: var(--c-text);
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ─── Header ─── */
+  .header {
+    background: linear-gradient(135deg, #040255 0%, #07047F 50%, #1C39C2 100%);
+    color: #fff;
+    padding: 40px 32px 32px;
+    position: relative;
+    overflow: hidden;
+  }
+  .header::after {
+    content: '';
+    position: absolute;
+    top: -60%;
+    right: -10%;
+    width: 400px;
+    height: 400px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(77, 209, 255, 0.08) 0%, transparent 70%);
+    pointer-events: none;
+  }
+  .header-inner {
+    max-width: 960px;
+    margin: 0 auto;
+    position: relative;
+    z-index: 1;
+  }
+  .header-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-bottom: 16px;
+  }
+  .status-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 14px;
+    border-radius: 20px;
+    font-size: 13px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    background: var(--c-status);
+    color: #fff;
+  }
+  .device-pill {
+    display: inline-block;
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    border: 1px solid rgba(255,255,255,0.25);
+    color: rgba(255,255,255,0.9);
+  }
+  .device-pill.cpu { background: rgba(0, 200, 167, 0.15); border-color: rgba(0, 200, 167, 0.4); }
+  .device-pill.gpu { background: rgba(77, 209, 255, 0.15); border-color: rgba(77, 209, 255, 0.4); }
+  .device-pill.npu { background: rgba(167, 139, 250, 0.15); border-color: rgba(167, 139, 250, 0.4); }
+  .header h1 {
+    font-size: 20px;
+    font-weight: 700;
+    line-height: 1.3;
+    margin-bottom: 20px;
+    color: #fff;
+  }
+  .header-meta {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 8px 24px;
+    font-size: 13px;
+    color: rgba(255,255,255,0.7);
+  }
+  .header-meta strong { color: #4DD1FF; font-weight: 500; }
+
+  /* ─── Error callout ─── */
+  .error-callout {
+    max-width: 960px;
+    margin: -20px auto 0;
+    padding: 0 24px;
+    position: relative;
+    z-index: 2;
+  }
+  .error-callout-inner {
+    background: #fff;
+    border-left: 4px solid var(--c-status);
+    border-radius: var(--radius);
+    padding: 16px 20px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+  }
+  .error-callout-inner .label {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--c-status);
+    margin-bottom: 6px;
+  }
+  .error-callout-inner pre {
+    font-family: var(--mono);
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--c-text);
+    white-space: pre-wrap;
+    word-break: break-word;
+    margin: 0;
+  }
+
+  /* ─── Main content ─── */
+  .main {
+    max-width: 960px;
+    margin: 0 auto;
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+
+  /* ─── Cards ─── */
+  .card {
+    background: var(--c-surface);
+    border: 1px solid var(--c-border);
+    border-radius: var(--radius);
+    padding: 24px;
+  }
+  .card h2 {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--c-accent);
+    margin-bottom: 16px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--c-border);
+  }
+  .hint {
+    font-size: 13px;
+    color: var(--c-text-3);
+    margin-bottom: 14px;
+  }
+
+  /* ─── Launch flags ─── */
+  .flags {
+    background: #0d0d1a;
+    border-radius: 8px;
+    padding: 14px 16px;
+    font-family: var(--mono);
+    font-size: 12px;
+    line-height: 1.7;
+    color: #90ee90;
+    white-space: pre-wrap;
+    word-break: break-all;
+    overflow-x: auto;
+  }
+
+  /* ─── Detail grid ─── */
+  .detail-grid {
+    display: grid;
+    grid-template-columns: 120px 1fr;
+    gap: 4px 16px;
+    font-size: 13px;
+  }
+  .detail-grid dt {
+    font-weight: 600;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--c-text-3);
+    padding-top: 2px;
+  }
+  .detail-grid dd { color: var(--c-text); }
+  .status-dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--c-status);
+    margin-right: 6px;
+    vertical-align: middle;
+  }
+
+  /* ─── Code / Log blocks ─── */
+  .code, .log {
+    background: #0d0d1a;
+    border-radius: 8px;
+    padding: 16px;
+    font-family: var(--mono);
+    font-size: 12px;
+    line-height: 1.6;
+    white-space: pre-wrap;
+    word-break: break-word;
+    overflow-y: auto;
+    max-height: 500px;
+    color: #d4d4d8;
+    margin: 0;
+  }
+  .log { max-height: 300px; color: #a1a1aa; }
+
+  /* ─── Run section ─── */
+  .run-card { border: 1px solid var(--c-accent); border-top: 3px solid var(--c-accent); }
+  .run-card button {
+    padding: 10px 28px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    background: var(--c-accent);
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    transition: background 0.15s ease, transform 0.1s ease;
+  }
+  .run-card button:hover { background: var(--c-accent-light); }
+  .run-card button:active { transform: scale(0.97); }
+  .output {
+    background: #0d0d1a;
+    border-radius: 8px;
+    padding: 14px 16px;
+    font-family: var(--mono);
+    font-size: 13px;
+    line-height: 1.5;
+    color: #a1a1aa;
+    margin-top: 14px;
+    min-height: 44px;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  /* ─── Footer ─── */
+  .footer {
+    text-align: center;
+    padding: 24px;
+    font-size: 11px;
+    color: var(--c-text-3);
+  }
+
+  /* ─── Responsive ─── */
+  @media (max-width: 640px) {
+    .header { padding: 28px 20px 24px; }
+    .header h1 { font-size: 17px; }
+    .header-meta { grid-template-columns: 1fr; }
+    .main { padding: 16px; }
+    .card { padding: 18px; }
+    .detail-grid { grid-template-columns: 100px 1fr; }
+    .error-callout { padding: 0 16px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-inner">
+    <div class="header-row">
+      <span class="status-pill">&#x1F512; Security</span>
+      <span class="device-pill gpu">gpu</span>
+    </div>
+    <h1>[pow] NaN op Infinity</h1>
+    <div class="header-meta">
+      <div><strong>Profile</strong> ort-default-gpu-dev</div>
+      <div><strong>Operator</strong> pow</div>
+      <div><strong>Duration</strong> 1454 ms</div>
+      <div><strong>Timestamp</strong> 2026-03-24T22:38:07.226Z</div>
+    </div>
+  </div>
+</div>
+
+<div class="error-callout">
+  <div class="error-callout-inner">
+    <div class="label">Error</div>
+    <pre>WebNN GPU context not available</pre>
+  </div>
+</div>
+
+<div class="main">
+
+  <section class="card">
+    <h2>Launch Flags</h2>
+    <p class="hint">Launch Chrome/Edge with these flags to reproduce.</p>
+    <pre class="flags">--enable-features=WebMachineLearningNeuralNetwork \
+  --allow-third-party-modules \
+  --no-sandbox \
+  --webnn-ort-logging-level=VERBOSE \
+  --webnn-ort-library-path-for-testing=C:\Program Files\ORT-16b556d \
+  --webnn-ort-ep-library-path-for-testing=OpenVINOExecutionProvider?fakepath \
+  --webnn-ort-ep-device=WebGpuExecutionProvider,0x8086,7D51</pre>
+  </section>
+
+  <section class="card">
+    <h2>Test Details</h2>
+    <dl class="detail-grid">
+      <dt>Operator</dt><dd>pow</dd>
+      <dt>Test Name</dt><dd>[pow] NaN op Infinity</dd>
+      <dt>Status</dt><dd><span class="status-dot"></span>security</dd>
+      <dt>Device</dt><dd>GPU</dd>
+      <dt>Duration</dt><dd>1454 ms</dd>
+      <dt>Profile</dt><dd>ort-default-gpu-dev</dd>
+    </dl>
+  </section>
+
+  <section class="card">
+    <h2>GPU Logs</h2>
+    <pre class="log">[38500:21252:0325/063804.163:ERROR:services\webnn\ort\environment.cc:568] : [WebNN] Failed to call ort_api-&gt;RegisterExecutionProviderLibrary( env.get(), ep_path_info.first.c_str(), ep_path_info.second.value().c_str()): [WebNN] ORT status error code: 1 error message: Error loading &quot;C:\Program Files\ORT-16b556d\fakepath&quot; which is missing. (Error 126: &quot;找不到指定的模块。&quot;)
+[38500:21252:0325/063804.166:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [INFO: onnxruntime, utils.cc:418 onnxruntime::LoadPluginOrProviderBridge] Loading EP library: 00003BC4022DEA00 as a plugin
+[38500:21252:0325/063804.300:ERROR:services\webnn\ort\logging.cc:146] : [WebNN] [INFO] Registered OrtEpDevice #0: {ep_name: CPUExecutionProvider, ep_vendor: Microsoft, ep_metadata: {version: 1.24.0}, ep_options: {}}, OrtHardwareDevice: {type: CPU, vendor: Intel, vendor_id: 0x8086, device_id: 0x7, device_metadata: {Description: Intel(R) Core(TM) Ultra 9 285H}}
+[38500:21252:0325/063804.300:ERROR:services\webnn\ort\logging.cc:146] : [WebNN] [INFO] Registered OrtEpDevice #1: {ep_name: WebGpuExecutionProvider, ep_vendor: Microsoft, ep_metadata: {version: 1.24.0}, ep_options: {}}, OrtHardwareDevice: {type: GPU, vendor: Intel Corporation, vendor_id: 0x8086, device_id: 0x7d51, device_metadata: {Description: Intel(R) Arc(TM) 140T GPU (32GB), LUID: 50514, DxgiAdapterNumber: 0, DxgiHighPerformanceIndex: 0, DxgiVideoMemory: 128 MB, Discrete: 0}}
+[38500:21252:0325/063804.300:ERROR:services\webnn\ort\logging.cc:146] : [WebNN] [INFO] Registered OrtEpDevice #2: {ep_name: OpenVINOExecutionProvider, ep_vendor: Intel, ep_metadata: {os_driver_version: 1004621, ov_device: NPU, version: 1.2.1+e7aaa28}, ep_options: {}}, OrtHardwareDevice: {type: NPU, vendor: Intel Corporation, vendor_id: 0x8086, device_id: 0x7d1d, device_metadata: {Description: Intel(R) AI Boost, LUID: 51533}}
+[38500:21252:0325/063804.300:ERROR:services\webnn\ort\logging.cc:146] : [WebNN] [INFO] Registered OrtEpDevice #3: {ep_name: OpenVINOExecutionProvider, ep_vendor: Intel, ep_metadata: {ov_device: GPU, version: 1.2.1+e7aaa28}, ep_options: {}}, OrtHardwareDevice: {type: GPU, vendor: Intel Corporation, vendor_id: 0x8086, device_id: 0x7d51, device_metadata: {Description: Intel(R) Arc(TM) 140T GPU (32GB), LUID: 50514, DxgiAdapterNumber: 0, DxgiHighPerformanceIndex: 0, DxgiVideoMemory: 128 MB, Discrete: 0}}
+[38500:21252:0325/063804.300:ERROR:services\webnn\ort\logging.cc:146] : [WebNN] [INFO] Registered OrtEpDevice #4: {ep_name: OpenVINOExecutionProvider, ep_vendor: Intel, ep_metadata: {ov_device: CPU, version: 1.2.1+e7aaa28}, ep_options: {}}, OrtHardwareDevice: {type: CPU, vendor: Intel, vendor_id: 0x8086, device_id: 0x7, device_metadata: {Description: Intel(R) Core(TM) Ultra 9 285H}}
+[38500:21252:0325/063804.300:ERROR:services\webnn\ort\logging.cc:146] : [WebNN] [INFO] Registered OrtEpDevice #5: {ep_name: OpenVINOExecutionProvider.AUTO, ep_vendor: Intel, ep_metadata: {os_driver_version: 1004621, ov_device: NPU, ov_meta_device: AUTO, version: 1.2.1+e7aaa28}, ep_options: {}}, OrtHardwareDevice: {type: NPU, vendor: Intel Corporation, vendor_id: 0x8086, device_id: 0x7d1d, device_metadata: {Description: Intel(R) AI Boost, LUID: 51533}}
+[38500:21252:0325/063804.300:ERROR:services\webnn\ort\logging.cc:146] : [WebNN] [INFO] Registered OrtEpDevice #6: {ep_name: OpenVINOExecutionProvider.AUTO, ep_vendor: Intel, ep_metadata: {ov_device: GPU, ov_meta_device: AUTO, version: 1.2.1+e7aaa28}, ep_options: {}}, OrtHardwareDevice: {type: GPU, vendor: Intel Corporation, vendor_id: 0x8086, device_id: 0x7d51, device_metadata: {Description: Intel(R) Arc(TM) 140T GPU (32GB), LUID: 50514, DxgiAdapterNumber: 0, DxgiHighPerformanceIndex: 0, DxgiVideoMemory: 128 MB, Discrete: 0}}
+[38500:21252:0325/063804.300:ERROR:services\webnn\ort\logging.cc:146] : [WebNN] [INFO] Registered OrtEpDevice #7: {ep_name: OpenVINOExecutionProvider.AUTO, ep_vendor: Intel, ep_metadata: {ov_device: CPU, ov_meta_device: AUTO, version: 1.2.1+e7aaa28}, ep_options: {}}, OrtHardwareDevice: {type: CPU, vendor: Intel, vendor_id: 0x8086, device_id: 0x7, device_metadata: {Description: Intel(R) Core(TM) Ultra 9 285H}}
+[38500:21252:0325/063804.301:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [INFO: onnxruntime, inference_session.cc:606 onnxruntime::InferenceSession::TraceSessionOptions] Session Options {  execution_mode:0 execution_order:DEFAULT enable_profiling:0 optimized_model_filepath: enable_mem_pattern:1 enable_mem_reuse:1 enable_cpu_mem_arena:1 profile_file_prefix:onnxruntime_profile_ session_logid: session_log_severity_level:-1 session_log_verbosity_level:0 max_num_graph_transformation_steps:10 graph_optimization_level:4 intra_op_param:OrtThreadPoolParams { thread_pool_size: 0 auto_set_affinity: 0 allow_spinning: 1 dynamic_block_base_: 0 stack_size: 0 affinity_str:  set_denormal_as_zero: 0 } inter_op_param:OrtThreadPoolParams { thread_pool_size: 0 auto_set_affinity: 0 allow_spinning: 1 dynamic_block_base_: 0 stack_size: 0 affinity_str:  set_denormal_as_zero: 0 } use_per_session_threads:1 thread_pool_allow_spinning:1 use_deterministic_compute:0 ep_selection_policy:0 config_options: {   session.strict_shape_type_inference: 1 } }
+[38500:21252:0325/063804.301:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [INFO: onnxruntime, inference_session.cc:414 onnxruntime::InferenceSession::ConstructorCommon::&lt;lambda_92d7a7a65044507df99c26792ccf0ded&gt;::operator ()] Flush-to-zero and denormal-as-zero are off
+[38500:21252:0325/063804.301:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [INFO: onnxruntime, inference_session.cc:422 onnxruntime::InferenceSession::ConstructorCommon] Creating and using per session threadpools since use_per_session_threads_ is true
+[38500:21252:0325/063804.301:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [INFO: onnxruntime, inference_session.cc:446 onnxruntime::InferenceSession::ConstructorCommon] Dynamic block base set to 0
+[38500:21252:0325/063804.303:ERROR:services\webnn\ort\logging.cc:146] : [WebNN] [INFO] Selected OrtEpDevice #0: {ep_name: WebGpuExecutionProvider, ep_vendor: Microsoft, ep_metadata: {version: 1.24.0}, ep_options: {}}, OrtHardwareDevice: {type: GPU, vendor: Intel Corporation, vendor_id: 0x8086, device_id: 0x7d51, device_metadata: {Description: Intel(R) Arc(TM) 140T GPU (32GB), LUID: 50514, DxgiAdapterNumber: 0, DxgiHighPerformanceIndex: 0, DxgiVideoMemory: 128 MB, Discrete: 0}}
+[38500:21252:0325/063804.303:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [VERBOSE: onnxruntime, webgpu_provider_factory.cc:57 onnxruntime::WebGpuProviderFactoryCreator::Create] WebGPU EP preferred layout: 1 (parsed from &quot;&quot;)
+[38500:21252:0325/063804.303:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [VERBOSE: onnxruntime, webgpu_provider_factory.cc:70 onnxruntime::WebGpuProviderFactoryCreator::Create] WebGPU EP graph capture enable: 0
+[38500:21252:0325/063804.303:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [VERBOSE: onnxruntime, webgpu_provider_factory.cc:89 onnxruntime::WebGpuProviderFactoryCreator::Create] WebGPU EP force CPU node count: 0
+[38500:21252:0325/063804.303:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [VERBOSE: onnxruntime, webgpu_provider_factory.cc:169 onnxruntime::WebGpuProviderFactoryCreator::Create] WebGPU EP small storage buffer binding size for testing: 0
+[38500:21252:0325/063804.303:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [VERBOSE: onnxruntime, webgpu_provider_factory.cc:183 onnxruntime::WebGpuProviderFactoryCreator::Create] WebGPU EP power preference: 2
+[38500:21252:0325/063804.303:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [VERBOSE: onnxruntime, webgpu_provider_factory.cc:196 onnxruntime::WebGpuProviderFactoryCreator::Create] WebGPU EP Device ID: 0
+[38500:21252:0325/063804.303:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [VERBOSE: onnxruntime, webgpu_provider_factory.cc:197 onnxruntime::WebGpuProviderFactoryCreator::Create] WebGPU EP WGPUInstance: 0
+[38500:21252:0325/063804.303:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [VERBOSE: onnxruntime, webgpu_provider_factory.cc:198 onnxruntime::WebGpuProviderFactoryCreator::Create] WebGPU EP WGPUDevice: 0
+[38500:21252:0325/063804.303:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [VERBOSE: onnxruntime, webgpu_provider_factory.cc:199 onnxruntime::WebGpuProviderFactoryCreator::Create] WebGPU EP DawnProcTable: 0
+[38500:21252:0325/063804.303:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [VERBOSE: onnxruntime, webgpu_provider_factory.cc:200 onnxruntime::WebGpuProviderFactoryCreator::Create] WebGPU EP ValidationMode: Basic
+[38500:21252:0325/063804.303:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [VERBOSE: onnxruntime, webgpu_provider_factory.cc:201 onnxruntime::WebGpuProviderFactoryCreator::Create] WebGPU EP PreserveDevice: 0
+[38500:21252:0325/063804.303:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [VERBOSE: onnxruntime, webgpu_provider_factory.cc:202 onnxruntime::WebGpuProviderFactoryCreator::Create] WebGPU EP PowerPreference: 2
+[38500:21252:0325/063804.303:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [VERBOSE: onnxruntime, webgpu_provider_factory.cc:228 onnxruntime::WebGpuProviderFactoryCreator::Create] WebGPU EP Dawn backend type: 4
+[38500:21252:0325/063804.303:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [VERBOSE: onnxruntime, webgpu_provider_factory.cc:255 onnxruntime::WebGpuProviderFactoryCreator::Create] WebGPU EP storage buffer cache mode: Bucket
+[38500:21252:0325/063804.303:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [VERBOSE: onnxruntime, webgpu_provider_factory.cc:259 onnxruntime::WebGpuProviderFactoryCreator::Create] WebGPU EP uniform buffer cache mode: Simple
+[38500:21252:0325/063804.303:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [VERBOSE: onnxruntime, webgpu_provider_factory.cc:262 onnxruntime::WebGpuProviderFactoryCreator::Create] WebGPU EP query resolve buffer cache mode: Disabled
+[38500:21252:0325/063804.303:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [VERBOSE: onnxruntime, webgpu_provider_factory.cc:265 onnxruntime::WebGpuProviderFactoryCreator::Create] WebGPU EP default buffer cache mode: Disabled
+[38500:21252:0325/063804.303:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [VERBOSE: onnxruntime, webgpu_provider_factory.cc:278 onnxruntime::WebGpuProviderFactoryCreator::Create] WebGPU EP pix capture enable: 0
+[38500:21252:0325/063805.320:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [INFO: onnxruntime, webgpu_context.cc:100 onnxruntime::webgpu::WebGpuContext::Initialize::&lt;lambda_1&gt;::()::&lt;lambda_3&gt;::operator ()] WebGPU device lost (4): Failed to create device:
+D3D12 create command queue failed with DXGI_ERROR_DEVICE_REMOVED (0x887A0005)
+    at CheckHRESULTImpl (C:\workspace\onnxruntime\build\Windows\Release\_deps\dawn-src\src\dawn\native\d3d\D3DError.cpp:119)
+GpuProcessHost: The GPU process crashed! Exit code: STATUS_ACCESS_VIOLATION.
+[23644:13912:0325/063805.642:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [VERBOSE: onnxruntime, env.cc:987 onnxruntime::WindowsEnv::InitializeCpuInfo] Found total 16 core(s) from windows system:
+[23644:13912:0325/063805.642:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [VERBOSE: onnxruntime, env.cc:988 onnxruntime::WindowsEnv::InitializeCpuInfo] 
+core 1 consist of logical processors: 1 
+core 2 consist of logical processors: 2 
+core 3 consist of logical processors: 3 
+core 4 consist of logical processors: 4 
+core 5 consist of logical processors: 5 
+core 6 consist of logical processors: 6 
+core 7 consist of logical processors: 7 
+core 8 consist of logical processors: 8 
+core 9 consist of logical processors: 9 
+core 10 consist of logical processors: 10 
+core 11 consist of logical processors: 11 
+core 12 consist of logical processors: 12 
+core 13 consist of logical processors: 13 
+core 14 consist of logical processors: 14 
+core 15 consist of logical processors: 15 
+core 16 consist of logical processors: 16
+[23644:13912:0325/063805.642:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [VERBOSE: onnxruntime, env.cc:989 onnxruntime::WindowsEnv::InitializeCpuInfo] 
+Detected L2 cache size: 3145728 bytes
+[23644:13912:0325/063805.646:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [INFO: onnxruntime, device_discovery_common.cc:34 onnxruntime::DeviceDiscovery::GetDevices::&lt;lambda_1&gt;::operator ()] Discovered OrtHardwareDevice {vendor_id:0x8086, device_id:0x7, vendor:Intel, type:0, metadata: [Description=Intel(R) Core(TM) Ultra 9 285H, ]}
+[23644:13912:0325/063805.646:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [INFO: onnxruntime, device_discovery_common.cc:34 onnxruntime::DeviceDiscovery::GetDevices::&lt;lambda_1&gt;::operator ()] Discovered OrtHardwareDevice {vendor_id:0x8086, device_id:0x7d51, vendor:Intel Corporation, type:1, metadata: [Description=Intel(R) Arc(TM) 140T GPU (32GB), Discrete=0, DxgiAdapterNumber=0, DxgiHighPerformanceIndex=0, DxgiVideoMemory=128 MB, LUID=50514, ]}
+[23644:13912:0325/063805.646:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [INFO: onnxruntime, device_discovery_common.cc:34 onnxruntime::DeviceDiscovery::GetDevices::&lt;lambda_1&gt;::operator ()] Discovered OrtHardwareDevice {vendor_id:0x8086, device_id:0x7d1d, vendor:Intel Corporation, type:2, metadata: [Description=Intel(R) AI Boost, LUID=51533, ]}
+[23644:13912:0325/063805.647:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [INFO: onnxruntime, utils.cc:418 onnxruntime::LoadPluginOrProviderBridge] Loading EP library: 000000DE5AFFF078 as a plugin
+[23644:13912:0325/063805.647:ERROR:services\webnn\ort\environment.cc:568] : [WebNN] Failed to call ort_api-&gt;RegisterExecutionProviderLibrary( env.get(), ep_path_info.first.c_str(), ep_path_info.second.value().c_str()): [WebNN] ORT status error code: 1 error message: Error loading &quot;C:\Program Files\ORT-16b556d\fakepath&quot; which is missing. (Error 126: &quot;找不到指定的模块。&quot;)
+[23644:13912:0325/063805.650:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [INFO: onnxruntime, utils.cc:418 onnxruntime::LoadPluginOrProviderBridge] Loading EP library: 000030EC000DD080 as a plugin
+[23644:13912:0325/063805.773:ERROR:services\webnn\ort\logging.cc:146] : [WebNN] [INFO] Registered OrtEpDevice #0: {ep_name: CPUExecutionProvider, ep_vendor: Microsoft, ep_metadata: {version: 1.24.0}, ep_options: {}}, OrtHardwareDevice: {type: CPU, vendor: Intel, vendor_id: 0x8086, device_id: 0x7, device_metadata: {Description: Intel(R) Core(TM) Ultra 9 285H}}
+[23644:13912:0325/063805.773:ERROR:services\webnn\ort\logging.cc:146] : [WebNN] [INFO] Registered OrtEpDevice #1: {ep_name: WebGpuExecutionProvider, ep_vendor: Microsoft, ep_metadata: {version: 1.24.0}, ep_options: {}}, OrtHardwareDevice: {type: GPU, vendor: Intel Corporation, vendor_id: 0x8086, device_id: 0x7d51, device_metadata: {Description: Intel(R) Arc(TM) 140T GPU (32GB), LUID: 50514, DxgiAdapterNumber: 0, DxgiHighPerformanceIndex: 0, DxgiVideoMemory: 128 MB, Discrete: 0}}
+[23644:13912:0325/063805.773:ERROR:services\webnn\ort\logging.cc:146] : [WebNN] [INFO] Registered OrtEpDevice #2: {ep_name: OpenVINOExecutionProvider, ep_vendor: Intel, ep_metadata: {os_driver_version: 1004621, ov_device: NPU, version: 1.2.1+e7aaa28}, ep_options: {}}, OrtHardwareDevice: {type: NPU, vendor: Intel Corporation, vendor_id: 0x8086, device_id: 0x7d1d, device_metadata: {Description: Intel(R) AI Boost, LUID: 51533}}
+[23644:13912:0325/063805.773:ERROR:services\webnn\ort\logging.cc:146] : [WebNN] [INFO] Registered OrtEpDevice #3: {ep_name: OpenVINOExecutionProvider, ep_vendor: Intel, ep_metadata: {ov_device: GPU, version: 1.2.1+e7aaa28}, ep_options: {}}, OrtHardwareDevice: {type: GPU, vendor: Intel Corporation, vendor_id: 0x8086, device_id: 0x7d51, device_metadata: {Description: Intel(R) Arc(TM) 140T GPU (32GB), LUID: 50514, DxgiAdapterNumber: 0, DxgiHighPerformanceIndex: 0, DxgiVideoMemory: 128 MB, Discrete: 0}}
+[23644:13912:0325/063805.773:ERROR:services\webnn\ort\logging.cc:146] : [WebNN] [INFO] Registered OrtEpDevice #4: {ep_name: OpenVINOExecutionProvider, ep_vendor: Intel, ep_metadata: {ov_device: CPU, version: 1.2.1+e7aaa28}, ep_options: {}}, OrtHardwareDevice: {type: CPU, vendor: Intel, vendor_id: 0x8086, device_id: 0x7, device_metadata: {Description: Intel(R) Core(TM) Ultra 9 285H}}
+[23644:13912:0325/063805.773:ERROR:services\webnn\ort\logging.cc:146] : [WebNN] [INFO] Registered OrtEpDevice #5: {ep_name: OpenVINOExecutionProvider.AUTO, ep_vendor: Intel, ep_metadata: {os_driver_version: 1004621, ov_device: NPU, ov_meta_device: AUTO, version: 1.2.1+e7aaa28}, ep_options: {}}, OrtHardwareDevice: {type: NPU, vendor: Intel Corporation, vendor_id: 0x8086, device_id: 0x7d1d, device_metadata: {Description: Intel(R) AI Boost, LUID: 51533}}
+[23644:13912:0325/063805.773:ERROR:services\webnn\ort\logging.cc:146] : [WebNN] [INFO] Registered OrtEpDevice #6: {ep_name: OpenVINOExecutionProvider.AUTO, ep_vendor: Intel, ep_metadata: {ov_device: GPU, ov_meta_device: AUTO, version: 1.2.1+e7aaa28}, ep_options: {}}, OrtHardwareDevice: {type: GPU, vendor: Intel Corporation, vendor_id: 0x8086, device_id: 0x7d51, device_metadata: {Description: Intel(R) Arc(TM) 140T GPU (32GB), LUID: 50514, DxgiAdapterNumber: 0, DxgiHighPerformanceIndex: 0, DxgiVideoMemory: 128 MB, Discrete: 0}}
+[23644:13912:0325/063805.773:ERROR:services\webnn\ort\logging.cc:146] : [WebNN] [INFO] Registered OrtEpDevice #7: {ep_name: OpenVINOExecutionProvider.AUTO, ep_vendor: Intel, ep_metadata: {ov_device: CPU, ov_meta_device: AUTO, version: 1.2.1+e7aaa28}, ep_options: {}}, OrtHardwareDevice: {type: CPU, vendor: Intel, vendor_id: 0x8086, device_id: 0x7, device_metadata: {Description: Intel(R) Core(TM) Ultra 9 285H}}
+[23644:13912:0325/063805.774:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [INFO: onnxruntime, inference_session.cc:606 onnxruntime::InferenceSession::TraceSessionOptions] Session Options {  execution_mode:0 execution_order:DEFAULT enable_profiling:0 optimized_model_filepath: enable_mem_pattern:1 enable_mem_reuse:1 enable_cpu_mem_arena:1 profile_file_prefix:onnxruntime_profile_ session_logid: session_log_severity_level:-1 session_log_verbosity_level:0 max_num_graph_transformation_steps:10 graph_optimization_level:4 intra_op_param:OrtThreadPoolParams { thread_pool_size: 0 auto_set_affinity: 0 allow_spinning: 1 dynamic_block_base_: 0 stack_size: 0 affinity_str:  set_denormal_as_zero: 0 } inter_op_param:OrtThreadPoolParams { thread_pool_size: 0 auto_set_affinity: 0 allow_spinning: 1 dynamic_block_base_: 0 stack_size: 0 affinity_str:  set_denormal_as_zero: 0 } use_per_session_threads:1 thread_pool_allow_spinning:1 use_deterministic_compute:0 ep_selection_policy:0 config_options: {   session.strict_shape_type_inference: 1 } }
+[23644:13912:0325/063805.774:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [INFO: onnxruntime, inference_session.cc:414 onnxruntime::InferenceSession::ConstructorCommon::&lt;lambda_92d7a7a65044507df99c26792ccf0ded&gt;::operator ()] Flush-to-zero and denormal-as-zero are off
+[23644:13912:0325/063805.774:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [INFO: onnxruntime, inference_session.cc:422 onnxruntime::InferenceSession::ConstructorCommon] Creating and using per session threadpools since use_per_session_threads_ is true
+[23644:13912:0325/063805.774:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [INFO: onnxruntime, inference_session.cc:446 onnxruntime::InferenceSession::ConstructorCommon] Dynamic block base set to 0
+[23644:13912:0325/063805.776:ERROR:services\webnn\ort\logging.cc:146] : [WebNN] [INFO] Selected OrtEpDevice #0: {ep_name: WebGpuExecutionProvider, ep_vendor: Microsoft, ep_metadata: {version: 1.24.0}, ep_options: {}}, OrtHardwareDevice: {type: GPU, vendor: Intel Corporation, vendor_id: 0x8086, device_id: 0x7d51, device_metadata: {Description: Intel(R) Arc(TM) 140T GPU (32GB), LUID: 50514, DxgiAdapterNumber: 0, DxgiHighPerformanceIndex: 0, DxgiVideoMemory: 128 MB, Discrete: 0}}
+[23644:13912:0325/063805.776:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [VERBOSE: onnxruntime, webgpu_provider_factory.cc:57 onnxruntime::WebGpuProviderFactoryCreator::Create] WebGPU EP preferred layout: 1 (parsed from &quot;&quot;)
+[23644:13912:0325/063805.776:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [VERBOSE: onnxruntime, webgpu_provider_factory.cc:70 onnxruntime::WebGpuProviderFactoryCreator::Create] WebGPU EP graph capture enable: 0
+[23644:13912:0325/063805.776:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [VERBOSE: onnxruntime, webgpu_provider_factory.cc:89 onnxruntime::WebGpuProviderFactoryCreator::Create] WebGPU EP force CPU node count: 0
+[23644:13912:0325/063805.776:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [VERBOSE: onnxruntime, webgpu_provider_factory.cc:169 onnxruntime::WebGpuProviderFactoryCreator::Create] WebGPU EP small storage buffer binding size for testing: 0
+[23644:13912:0325/063805.776:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [VERBOSE: onnxruntime, webgpu_provider_factory.cc:183 onnxruntime::WebGpuProviderFactoryCreator::Create] WebGPU EP power preference: 2
+[23644:13912:0325/063805.776:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [VERBOSE: onnxruntime, webgpu_provider_factory.cc:196 onnxruntime::WebGpuProviderFactoryCreator::Create] WebGPU EP Device ID: 0
+[23644:13912:0325/063805.776:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [VERBOSE: onnxruntime, webgpu_provider_factory.cc:197 onnxruntime::WebGpuProviderFactoryCreator::Create] WebGPU EP WGPUInstance: 0
+[23644:13912:0325/063805.776:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [VERBOSE: onnxruntime, webgpu_provider_factory.cc:198 onnxruntime::WebGpuProviderFactoryCreator::Create] WebGPU EP WGPUDevice: 0
+[23644:13912:0325/063805.776:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [VERBOSE: onnxruntime, webgpu_provider_factory.cc:199 onnxruntime::WebGpuProviderFactoryCreator::Create] WebGPU EP DawnProcTable: 0
+[23644:13912:0325/063805.776:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [VERBOSE: onnxruntime, webgpu_provider_factory.cc:200 onnxruntime::WebGpuProviderFactoryCreator::Create] WebGPU EP ValidationMode: Basic
+[23644:13912:0325/063805.776:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [VERBOSE: onnxruntime, webgpu_provider_factory.cc:201 onnxruntime::WebGpuProviderFactoryCreator::Create] WebGPU EP PreserveDevice: 0
+[23644:13912:0325/063805.776:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [VERBOSE: onnxruntime, webgpu_provider_factory.cc:202 onnxruntime::WebGpuProviderFactoryCreator::Create] WebGPU EP PowerPreference: 2
+[23644:13912:0325/063805.776:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [VERBOSE: onnxruntime, webgpu_provider_factory.cc:228 onnxruntime::WebGpuProviderFactoryCreator::Create] WebGPU EP Dawn backend type: 4
+[23644:13912:0325/063805.776:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [VERBOSE: onnxruntime, webgpu_provider_factory.cc:255 onnxruntime::WebGpuProviderFactoryCreator::Create] WebGPU EP storage buffer cache mode: Bucket
+[23644:13912:0325/063805.776:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [VERBOSE: onnxruntime, webgpu_provider_factory.cc:259 onnxruntime::WebGpuProviderFactoryCreator::Create] WebGPU EP uniform buffer cache mode: Simple
+[23644:13912:0325/063805.776:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [VERBOSE: onnxruntime, webgpu_provider_factory.cc:262 onnxruntime::WebGpuProviderFactoryCreator::Create] WebGPU EP query resolve buffer cache mode: Disabled
+[23644:13912:0325/063805.776:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [VERBOSE: onnxruntime, webgpu_provider_factory.cc:265 onnxruntime::WebGpuProviderFactoryCreator::Create] WebGPU EP default buffer cache mode: Disabled
+[23644:13912:0325/063805.776:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [VERBOSE: onnxruntime, webgpu_provider_factory.cc:278 onnxruntime::WebGpuProviderFactoryCreator::Create] WebGPU EP pix capture enable: 0
+[23644:13912:0325/063806.780:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [INFO: onnxruntime, webgpu_context.cc:100 onnxruntime::webgpu::WebGpuContext::Initialize::&lt;lambda_1&gt;::()::&lt;lambda_3&gt;::operator ()] WebGPU device lost (4): Failed to create device:
+D3D12 create command queue failed with DXGI_ERROR_DEVICE_REMOVED (0x887A0005)
+    at CheckHRESULTImpl (C:\workspace\onnxruntime\build\Windows\Release\_deps\dawn-src\src\dawn\native\d3d\D3DError.cpp:119)
+GpuProcessHost: The GPU process crashed! Exit code: STATUS_ACCESS_VIOLATION.</pre>
+  </section>
+  
+
+  
+  <section class="card">
+    <h2>Reproduction Script</h2>
+    <p class="hint">Pure WebNN API code — paste into DevTools or use the Run button below.</p>
+    <pre class="code">'use strict';
+
+// ===== Constants =====
+const INT32_MAX = 2147483647;
+const UINT32_MAX = 4294967295;
+const FLOAT32_MAX = 3.4028235e+38;
+const FLOAT32_MIN_SUBNORMAL = 1.401298464324817e-45;
+const FLOAT32_MIN_NORMAL = 1.1754943508222875e-38;
+
+// ===== Data-creation helpers =====
+
+function filledFloat32(shape, value) {
+  const size = Array.isArray(shape) ? shape.reduce((a, b) =&gt; a * b, 1) : shape;
+  return new Float32Array(size).fill(value);
+}
+
+function randomFloat32(shape) {
+  const size = Array.isArray(shape) ? shape.reduce((a, b) =&gt; a * b, 1) : shape;
+  const arr = new Float32Array(size);
+  for (let i = 0; i &lt; size; i++) arr[i] = Math.random() * 2 - 1;
+  return arr;
+}
+
+function adversarialFloat32(shape) {
+  const size = Array.isArray(shape) ? shape.reduce((a, b) =&gt; a * b, 1) : shape;
+  const specials = [
+    NaN, Infinity, -Infinity, 0, -0,
+    FLOAT32_MAX, -FLOAT32_MAX,
+    FLOAT32_MIN_SUBNORMAL, -FLOAT32_MIN_SUBNORMAL,
+    FLOAT32_MIN_NORMAL, -FLOAT32_MIN_NORMAL,
+    1.0, -1.0, 0.5, -0.5,
+  ];
+  const arr = new Float32Array(size);
+  for (let i = 0; i &lt; size; i++) arr[i] = specials[i % specials.length];
+  return arr;
+}
+
+function filledInt32(shape, value) {
+  const size = Array.isArray(shape) ? shape.reduce((a, b) =&gt; a * b, 1) : shape;
+  return new Int32Array(size).fill(value);
+}
+
+function filledUint8(shape, value) {
+  const size = Array.isArray(shape) ? shape.reduce((a, b) =&gt; a * b, 1) : shape;
+  return new Uint8Array(size).fill(value);
+}
+
+function filledInt8(shape, value) {
+  const size = Array.isArray(shape) ? shape.reduce((a, b) =&gt; a * b, 1) : shape;
+  return new Int8Array(size).fill(value);
+}
+
+function filledUint32(shape, value) {
+  const size = Array.isArray(shape) ? shape.reduce((a, b) =&gt; a * b, 1) : shape;
+  return new Uint32Array(size).fill(value);
+}
+
+function interleavedSubnormalFloat32(shape) {
+  const size = Array.isArray(shape) ? shape.reduce((a, b) =&gt; a * b, 1) : shape;
+  const arr = new Float32Array(size);
+  for (let i = 0; i &lt; size; i++) {
+    arr[i] = i % 2 === 0 ? 1.0 : FLOAT32_MIN_SUBNORMAL;
+  }
+  return arr;
+}
+
+function tiledFloat32(shape, values) {
+  const size = Array.isArray(shape) ? shape.reduce((a, b) =&gt; a * b, 1) : shape;
+  const arr = new Float32Array(size);
+  for (let i = 0; i &lt; size; i++) arr[i] = values[i % values.length];
+  return arr;
+}
+
+// ===== Reproduction test =====
+
+async function runTest() {
+  const context = await navigator.ml.createContext({ deviceType: 'gpu' });
+  try {
+    {
+    const builder = new MLGraphBuilder(context);
+    const a = builder.constant({ dataType: 'float32', shape: [64] }, filledFloat32([64], NaN));
+              const b = builder.constant({ dataType: 'float32', shape: [64] }, filledFloat32([64], Infinity));
+    const outputOperand = builder['pow'](a, b);
+    const graph = await builder.build({ output: outputOperand });
+    const outputTensor = await context.createTensor({
+      dataType: outputOperand.dataType,
+      shape: Array.from(outputOperand.shape),
+      readable: true,
+    });
+    try {
+      context.dispatch(graph, {}, { output: outputTensor });
+      const result = await context.readTensor(outputTensor);
+    } finally {
+      outputTensor.destroy();
+      graph.destroy();
+    }
+  }
+    document.getElementById('result').textContent = 'Test completed (no crash)';
+  } catch (e) {
+    document.getElementById('result').textContent = 'Error: ' + e.message;
+    throw e;
+  } finally {
+    try { context.destroy(); } catch(e) { /* ignore */ }
+  }
+}
+
+runTest();</pre>
+  </section>
+
+  <section class="card run-card">
+    <h2>&#9654; Run Test</h2>
+    <p class="hint">Click the button or open this page in Chrome with the launch flags above.</p>
+    <button id="runBtn" onclick="runTest()">Run Test</button>
+    <pre id="result" class="output">Ready to run…</pre>
+  </section>
+</div>
+<script>
+'use strict';
+
+// ===== Constants =====
+const INT32_MAX = 2147483647;
+const UINT32_MAX = 4294967295;
+const FLOAT32_MAX = 3.4028235e+38;
+const FLOAT32_MIN_SUBNORMAL = 1.401298464324817e-45;
+const FLOAT32_MIN_NORMAL = 1.1754943508222875e-38;
+
+// ===== Data-creation helpers =====
+
+function filledFloat32(shape, value) {
+  const size = Array.isArray(shape) ? shape.reduce((a, b) => a * b, 1) : shape;
+  return new Float32Array(size).fill(value);
+}
+
+function randomFloat32(shape) {
+  const size = Array.isArray(shape) ? shape.reduce((a, b) => a * b, 1) : shape;
+  const arr = new Float32Array(size);
+  for (let i = 0; i < size; i++) arr[i] = Math.random() * 2 - 1;
+  return arr;
+}
+
+function adversarialFloat32(shape) {
+  const size = Array.isArray(shape) ? shape.reduce((a, b) => a * b, 1) : shape;
+  const specials = [
+    NaN, Infinity, -Infinity, 0, -0,
+    FLOAT32_MAX, -FLOAT32_MAX,
+    FLOAT32_MIN_SUBNORMAL, -FLOAT32_MIN_SUBNORMAL,
+    FLOAT32_MIN_NORMAL, -FLOAT32_MIN_NORMAL,
+    1.0, -1.0, 0.5, -0.5,
+  ];
+  const arr = new Float32Array(size);
+  for (let i = 0; i < size; i++) arr[i] = specials[i % specials.length];
+  return arr;
+}
+
+function filledInt32(shape, value) {
+  const size = Array.isArray(shape) ? shape.reduce((a, b) => a * b, 1) : shape;
+  return new Int32Array(size).fill(value);
+}
+
+function filledUint8(shape, value) {
+  const size = Array.isArray(shape) ? shape.reduce((a, b) => a * b, 1) : shape;
+  return new Uint8Array(size).fill(value);
+}
+
+function filledInt8(shape, value) {
+  const size = Array.isArray(shape) ? shape.reduce((a, b) => a * b, 1) : shape;
+  return new Int8Array(size).fill(value);
+}
+
+function filledUint32(shape, value) {
+  const size = Array.isArray(shape) ? shape.reduce((a, b) => a * b, 1) : shape;
+  return new Uint32Array(size).fill(value);
+}
+
+function interleavedSubnormalFloat32(shape) {
+  const size = Array.isArray(shape) ? shape.reduce((a, b) => a * b, 1) : shape;
+  const arr = new Float32Array(size);
+  for (let i = 0; i < size; i++) {
+    arr[i] = i % 2 === 0 ? 1.0 : FLOAT32_MIN_SUBNORMAL;
+  }
+  return arr;
+}
+
+function tiledFloat32(shape, values) {
+  const size = Array.isArray(shape) ? shape.reduce((a, b) => a * b, 1) : shape;
+  const arr = new Float32Array(size);
+  for (let i = 0; i < size; i++) arr[i] = values[i % values.length];
+  return arr;
+}
+
+// ===== Reproduction test =====
+
+async function runTest() {
+  const context = await navigator.ml.createContext({ deviceType: 'gpu' });
+  try {
+    {
+    const builder = new MLGraphBuilder(context);
+    const a = builder.constant({ dataType: 'float32', shape: [64] }, filledFloat32([64], NaN));
+              const b = builder.constant({ dataType: 'float32', shape: [64] }, filledFloat32([64], Infinity));
+    const outputOperand = builder['pow'](a, b);
+    const graph = await builder.build({ output: outputOperand });
+    const outputTensor = await context.createTensor({
+      dataType: outputOperand.dataType,
+      shape: Array.from(outputOperand.shape),
+      readable: true,
+    });
+    try {
+      context.dispatch(graph, {}, { output: outputTensor });
+      const result = await context.readTensor(outputTensor);
+    } finally {
+      outputTensor.destroy();
+      graph.destroy();
+    }
+  }
+    document.getElementById('result').textContent = 'Test completed (no crash)';
+  } catch (e) {
+    document.getElementById('result').textContent = 'Error: ' + e.message;
+    throw e;
+  } finally {
+    try { context.destroy(); } catch(e) { /* ignore */ }
+  }
+}
+
+runTest();
+</script>
+
+<div class="footer">WebNN WPT Stress Test &middot; Generated 2026-03-24T22:38:07.244Z</div>
+</body>
+</html>
