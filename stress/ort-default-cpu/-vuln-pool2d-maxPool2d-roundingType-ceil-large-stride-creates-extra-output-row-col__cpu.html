@@ -1,0 +1,674 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>[vuln-pool2d] maxPool2d: roundingType=ceil + large stride creates extra output row/col — Crash</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; }
+
+  :root {
+    --c-bg: #f4f5f7;
+    --c-surface: #ffffff;
+    --c-border: #e2e4e9;
+    --c-text: #1a1d26;
+    --c-text-2: #555b6e;
+    --c-text-3: #8a90a0;
+    --c-accent: #07047F;
+    --c-accent-light: #1C39C2;
+    --c-status: #BA2324;
+    --mono: 'SF Mono', 'Fira Code', 'Cascadia Code', 'JetBrains Mono', Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    --radius: 5px;
+  }
+
+  body {
+    font-family: var(--sans);
+    background: var(--c-bg);
+    color: var(--c-text);
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ─── Header ─── */
+  .header {
+    background: linear-gradient(135deg, #040255 0%, #07047F 50%, #1C39C2 100%);
+    color: #fff;
+    padding: 40px 32px 32px;
+    position: relative;
+    overflow: hidden;
+  }
+  .header::after {
+    content: '';
+    position: absolute;
+    top: -60%;
+    right: -10%;
+    width: 400px;
+    height: 400px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(77, 209, 255, 0.08) 0%, transparent 70%);
+    pointer-events: none;
+  }
+  .header-inner {
+    max-width: 960px;
+    margin: 0 auto;
+    position: relative;
+    z-index: 1;
+  }
+  .header-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-bottom: 16px;
+  }
+  .status-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 14px;
+    border-radius: 20px;
+    font-size: 13px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    background: var(--c-status);
+    color: #fff;
+  }
+  .device-pill {
+    display: inline-block;
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    border: 1px solid rgba(255,255,255,0.25);
+    color: rgba(255,255,255,0.9);
+  }
+  .device-pill.cpu { background: rgba(0, 200, 167, 0.15); border-color: rgba(0, 200, 167, 0.4); }
+  .device-pill.gpu { background: rgba(77, 209, 255, 0.15); border-color: rgba(77, 209, 255, 0.4); }
+  .device-pill.npu { background: rgba(167, 139, 250, 0.15); border-color: rgba(167, 139, 250, 0.4); }
+  .header h1 {
+    font-size: 20px;
+    font-weight: 700;
+    line-height: 1.3;
+    margin-bottom: 20px;
+    color: #fff;
+  }
+  .header-meta {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 8px 24px;
+    font-size: 13px;
+    color: rgba(255,255,255,0.7);
+  }
+  .header-meta strong { color: #4DD1FF; font-weight: 500; }
+
+  /* ─── Error callout ─── */
+  .error-callout {
+    max-width: 960px;
+    margin: -20px auto 0;
+    padding: 0 24px;
+    position: relative;
+    z-index: 2;
+  }
+  .error-callout-inner {
+    background: #fff;
+    border-left: 4px solid var(--c-status);
+    border-radius: var(--radius);
+    padding: 16px 20px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+  }
+  .error-callout-inner .label {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--c-status);
+    margin-bottom: 6px;
+  }
+  .error-callout-inner pre {
+    font-family: var(--mono);
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--c-text);
+    white-space: pre-wrap;
+    word-break: break-word;
+    margin: 0;
+  }
+
+  /* ─── Main content ─── */
+  .main {
+    max-width: 960px;
+    margin: 0 auto;
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+
+  /* ─── Cards ─── */
+  .card {
+    background: var(--c-surface);
+    border: 1px solid var(--c-border);
+    border-radius: var(--radius);
+    padding: 24px;
+  }
+  .card h2 {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--c-accent);
+    margin-bottom: 16px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--c-border);
+  }
+  .hint {
+    font-size: 13px;
+    color: var(--c-text-3);
+    margin-bottom: 14px;
+  }
+
+  /* ─── Launch flags ─── */
+  .flags {
+    background: #0d0d1a;
+    border-radius: 8px;
+    padding: 14px 16px;
+    font-family: var(--mono);
+    font-size: 12px;
+    line-height: 1.7;
+    color: #90ee90;
+    white-space: pre-wrap;
+    word-break: break-all;
+    overflow-x: auto;
+  }
+
+  /* ─── Detail grid ─── */
+  .detail-grid {
+    display: grid;
+    grid-template-columns: 120px 1fr;
+    gap: 4px 16px;
+    font-size: 13px;
+  }
+  .detail-grid dt {
+    font-weight: 600;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--c-text-3);
+    padding-top: 2px;
+  }
+  .detail-grid dd { color: var(--c-text); }
+  .status-dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--c-status);
+    margin-right: 6px;
+    vertical-align: middle;
+  }
+
+  /* ─── Code / Log blocks ─── */
+  .code, .log {
+    background: #0d0d1a;
+    border-radius: 8px;
+    padding: 16px;
+    font-family: var(--mono);
+    font-size: 12px;
+    line-height: 1.6;
+    white-space: pre-wrap;
+    word-break: break-word;
+    overflow-y: auto;
+    max-height: 500px;
+    color: #d4d4d8;
+    margin: 0;
+  }
+  .log { max-height: 300px; color: #a1a1aa; }
+
+  /* ─── Run section ─── */
+  .run-card { border: 1px solid var(--c-accent); border-top: 3px solid var(--c-accent); }
+  .run-card button {
+    padding: 10px 28px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    background: var(--c-accent);
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    transition: background 0.15s ease, transform 0.1s ease;
+  }
+  .run-card button:hover { background: var(--c-accent-light); }
+  .run-card button:active { transform: scale(0.97); }
+  .output {
+    background: #0d0d1a;
+    border-radius: 8px;
+    padding: 14px 16px;
+    font-family: var(--mono);
+    font-size: 13px;
+    line-height: 1.5;
+    color: #a1a1aa;
+    margin-top: 14px;
+    min-height: 44px;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  /* ─── Footer ─── */
+  .footer {
+    text-align: center;
+    padding: 24px;
+    font-size: 11px;
+    color: var(--c-text-3);
+  }
+
+  /* ─── Responsive ─── */
+  @media (max-width: 640px) {
+    .header { padding: 28px 20px 24px; }
+    .header h1 { font-size: 17px; }
+    .header-meta { grid-template-columns: 1fr; }
+    .main { padding: 16px; }
+    .card { padding: 18px; }
+    .detail-grid { grid-template-columns: 100px 1fr; }
+    .error-callout { padding: 0 16px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-inner">
+    <div class="header-row">
+      <span class="status-pill">&#x1F4A5; Crash</span>
+      <span class="device-pill cpu">cpu</span>
+    </div>
+    <h1>[vuln-pool2d] maxPool2d: roundingType=ceil + large stride creates extra output row/col</h1>
+    <div class="header-meta">
+      <div><strong>Profile</strong> ort-default-public</div>
+      <div><strong>Operator</strong> vuln-pool2d</div>
+      <div><strong>Duration</strong> 6 ms</div>
+      <div><strong>Timestamp</strong> 2026-04-01T04:16:36.701Z</div>
+    </div>
+  </div>
+</div>
+
+<div class="error-callout">
+  <div class="error-callout-inner">
+    <div class="label">Error</div>
+    <pre>Failed to execute 'readTensor' on 'MLContext': Tensor has been destroyed or context is lost.</pre>
+  </div>
+</div>
+
+<div class="main">
+
+  <section class="card">
+    <h2>Launch Flags</h2>
+    <p class="hint">Launch Chrome/Edge with these flags to reproduce.</p>
+    <pre class="flags">--enable-features=WebMachineLearningNeuralNetwork \
+  --webnn-ort-ignore-ihv-eps \
+  --webnn-ort-logging-level=VERBOSE</pre>
+  </section>
+
+  <section class="card">
+    <h2>Test Details</h2>
+    <dl class="detail-grid">
+      <dt>Operator</dt><dd>vuln-pool2d</dd>
+      <dt>Test Name</dt><dd>[vuln-pool2d] maxPool2d: roundingType=ceil + large stride creates extra output row/col</dd>
+      <dt>Status</dt><dd><span class="status-dot"></span>crash</dd>
+      <dt>Device</dt><dd>CPU</dd>
+      <dt>Duration</dt><dd>6 ms</dd>
+      <dt>Profile</dt><dd>ort-default-public</dd>
+    </dl>
+  </section>
+
+  <section class="card">
+    <h2>GPU Logs</h2>
+    <pre class="log">[12960:9524:0401/121636.535:ERROR:services\webnn\ort\logging.cc:146] : [WebNN] [INFO] Registered OrtEpDevice #0: {ep_name: CPUExecutionProvider, ep_vendor: Microsoft, ep_metadata: {version: 1.23.4}, ep_options: {}}, OrtHardwareDevice: {type: CPU, vendor: Intel, vendor_id: 0x8086, device_id: 0x7, device_metadata: {Description: Intel(R) Core(TM) Ultra 9 285H}}
+[12960:9524:0401/121636.535:ERROR:services\webnn\ort\logging.cc:146] : [WebNN] [INFO] Registered OrtEpDevice #1: {ep_name: DmlExecutionProvider, ep_vendor: Microsoft, ep_metadata: {version: 1.23.4}, ep_options: {device_id: 0}}, OrtHardwareDevice: {type: GPU, vendor: Intel Corporation, vendor_id: 0x8086, device_id: 0x7d51, device_metadata: {Description: Intel(R) Arc(TM) 140T GPU (32GB), LUID: 45284, DxgiAdapterNumber: 0, DxgiHighPerformanceIndex: 0, DxgiVideoMemory: 128 MB, Discrete: 0}}
+[12960:2204:0401/121636.553:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [INFO: onnxruntime, inference_session.cc:606 onnxruntime::InferenceSession::TraceSessionOptions] Session Options {  execution_mode:0 execution_order:DEFAULT enable_profiling:0 optimized_model_filepath: enable_mem_pattern:1 enable_mem_reuse:1 enable_cpu_mem_arena:1 profile_file_prefix:onnxruntime_profile_ session_logid: session_log_severity_level:-1 session_log_verbosity_level:0 max_num_graph_transformation_steps:10 graph_optimization_level:4 intra_op_param:OrtThreadPoolParams { thread_pool_size: 0 auto_set_affinity: 0 allow_spinning: 0 dynamic_block_base_: 0 stack_size: 0 affinity_str:  set_denormal_as_zero: 0 } inter_op_param:OrtThreadPoolParams { thread_pool_size: 0 auto_set_affinity: 0 allow_spinning: 0 dynamic_block_base_: 0 stack_size: 0 affinity_str:  set_denormal_as_zero: 0 } use_per_session_threads:1 thread_pool_allow_spinning:1 use_deterministic_compute:0 ep_selection_policy:0 config_options: {   session.strict_shape_type_inference: 1 } }
+[12960:2204:0401/121636.553:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [INFO: onnxruntime, inference_session.cc:414 onnxruntime::InferenceSession::ConstructorCommon::&lt;lambda_b2bbeb0791b71b9a1cc261707fb6c3c5&gt;::operator ()] Flush-to-zero and denormal-as-zero are off
+[12960:2204:0401/121636.553:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [INFO: onnxruntime, inference_session.cc:422 onnxruntime::InferenceSession::ConstructorCommon] Creating and using per session threadpools since use_per_session_threads_ is true
+[12960:2204:0401/121636.553:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [INFO: onnxruntime, inference_session.cc:446 onnxruntime::InferenceSession::ConstructorCommon] Dynamic block base set to 0
+[12960:2204:0401/121636.554:ERROR:services\webnn\ort\logging.cc:146] : [WebNN] [INFO] Selected OrtEpDevice #0: {ep_name: CPUExecutionProvider, ep_vendor: Microsoft, ep_metadata: {version: 1.23.4}, ep_options: {}}, OrtHardwareDevice: {type: CPU, vendor: Intel, vendor_id: 0x8086, device_id: 0x7, device_metadata: {Description: Intel(R) Core(TM) Ultra 9 285H}}
+[12960:2204:0401/121636.554:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [INFO: onnxruntime, inference_session.cc:2042 onnxruntime::InferenceSession::Initialize] Initializing session.
+[12960:2204:0401/121636.554:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [INFO: onnxruntime, bfc_arena.cc:28 onnxruntime::BFCArena::BFCArena] Creating BFCArena for Cpu with following configs: initial_chunk_size_bytes: 1048576 max_dead_bytes_per_chunk: 134217728 initial_growth_chunk_size_bytes: 2097152 max_power_of_two_extend_bytes: 1073741824 memory limit: 18446744073709551615 arena_extend_strategy: 0
+[12960:2204:0401/121636.554:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [VERBOSE: onnxruntime, bfc_arena.cc:65 onnxruntime::BFCArena::BFCArena] Creating 21 bins of max chunk size 256 to 268435456
+[12960:2204:0401/121636.556:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [INFO: onnxruntime, graph_partitioner.cc:1209 onnxruntime::GraphPartitioner::InlineFunctionsAOT] This model does not have any local functions defined. AOT Inlining is not performed
+[12960:2204:0401/121636.556:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [INFO: onnxruntime, graph_transformer.cc:15 onnxruntime::GraphTransformer::Apply] GraphTransformer EnsureUniqueDQForNodeUnit modified: 0 with status: OK
+[12960:2204:0401/121636.556:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [INFO: onnxruntime, graph_transformer.cc:15 onnxruntime::GraphTransformer::Apply] GraphTransformer Level1_RuleBasedTransformer modified: 0 with status: OK
+[12960:2204:0401/121636.556:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [INFO: onnxruntime, graph_transformer.cc:15 onnxruntime::GraphTransformer::Apply] GraphTransformer DoubleQDQPairsRemover modified: 0 with status: OK
+[12960:2204:0401/121636.556:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [INFO: onnxruntime, graph_transformer.cc:15 onnxruntime::GraphTransformer::Apply] GraphTransformer ConstantSharing modified: 0 with status: OK
+[12960:2204:0401/121636.556:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [INFO: onnxruntime, graph_transformer.cc:15 onnxruntime::GraphTransformer::Apply] GraphTransformer CommonSubexpressionElimination modified: 0 with status: OK
+[12960:2204:0401/121636.556:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [INFO: onnxruntime, graph_transformer.cc:15 onnxruntime::GraphTransformer::Apply] GraphTransformer ConstantFolding modified: 1 with status: OK
+[12960:2204:0401/121636.557:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [INFO: onnxruntime, graph.cc:4888 onnxruntime::Graph::CleanUnusedInitializersAndNodeArgs] Removing initializer '_1'. It is no longer used by any node.
+[12960:2204:0401/121636.557:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [INFO: onnxruntime, graph_transformer.cc:15 onnxruntime::GraphTransformer::Apply] GraphTransformer MatMulAddFusion modified: 0 with status: OK
+[12960:2204:0401/121636.557:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [INFO: onnxruntime, graph_transformer.cc:15 onnxruntime::GraphTransformer::Apply] GraphTransformer ReshapeFusion modified: 0 with status: OK
+[12960:2204:0401/121636.557:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [INFO: onnxruntime, graph_transformer.cc:15 onnxruntime::GraphTransformer::Apply] GraphTransformer FreeDimensionOverrideTransformer modified: 0 with status: OK
+[12960:2204:0401/121636.557:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [INFO: onnxruntime, graph_transformer.cc:15 onnxruntime::GraphTransformer::Apply] GraphTransformer GeluFusionL1 modified: 0 with status: OK
+[12960:2204:0401/121636.557:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [INFO: onnxruntime, graph_transformer.cc:15 onnxruntime::GraphTransformer::Apply] GraphTransformer LayerNormFusionL1 modified: 0 with status: OK
+[12960:2204:0401/121636.557:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [INFO: onnxruntime, graph_transformer.cc:15 onnxruntime::GraphTransformer::Apply] GraphTransformer QDQPropagationTransformer modified: 0 with status: OK
+[12960:2204:0401/121636.557:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [INFO: onnxruntime, graph_transformer.cc:15 onnxruntime::GraphTransformer::Apply] GraphTransformer WeightBiasQuantization modified: 0 with status: OK
+[12960:2204:0401/121636.557:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [INFO: onnxruntime, graph_transformer.cc:15 onnxruntime::GraphTransformer::Apply] GraphTransformer EnsureUniqueDQForNodeUnit modified: 0 with status: OK
+[12960:2204:0401/121636.557:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [INFO: onnxruntime, graph_transformer.cc:15 onnxruntime::GraphTransformer::Apply] GraphTransformer RocmBlasAltImpl modified: 0 with status: OK
+[12960:2204:0401/121636.557:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [INFO: onnxruntime, graph_transformer.cc:15 onnxruntime::GraphTransformer::Apply] GraphTransformer TransposeOptimizer modified: 0 with status: OK
+[12960:2204:0401/121636.557:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [INFO: onnxruntime, graph_transformer.cc:15 onnxruntime::GraphTransformer::Apply] GraphTransformer Level1_RuleBasedTransformer modified: 0 with status: OK
+[12960:2204:0401/121636.557:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [INFO: onnxruntime, graph_transformer.cc:15 onnxruntime::GraphTransformer::Apply] GraphTransformer DoubleQDQPairsRemover modified: 0 with status: OK
+[12960:2204:0401/121636.557:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [INFO: onnxruntime, graph_transformer.cc:15 onnxruntime::GraphTransformer::Apply] GraphTransformer CommonSubexpressionElimination modified: 0 with status: OK
+[12960:2204:0401/121636.557:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [INFO: onnxruntime, graph_transformer.cc:15 onnxruntime::GraphTransformer::Apply] GraphTransformer ConstantFolding modified: 0 with status: OK
+[12960:2204:0401/121636.557:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [INFO: onnxruntime, graph_transformer.cc:15 onnxruntime::GraphTransformer::Apply] GraphTransformer MatMulAddFusion modified: 0 with status: OK
+[12960:2204:0401/121636.557:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [INFO: onnxruntime, graph_transformer.cc:15 onnxruntime::GraphTransformer::Apply] GraphTransformer ReshapeFusion modified: 0 with status: OK
+[12960:2204:0401/121636.557:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [INFO: onnxruntime, graph_transformer.cc:15 onnxruntime::GraphTransformer::Apply] GraphTransformer FreeDimensionOverrideTransformer modified: 0 with status: OK
+[12960:2204:0401/121636.557:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [INFO: onnxruntime, graph_transformer.cc:15 onnxruntime::GraphTransformer::Apply] GraphTransformer GeluFusionL1 modified: 0 with status: OK
+[12960:2204:0401/121636.557:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [INFO: onnxruntime, graph_transformer.cc:15 onnxruntime::GraphTransformer::Apply] GraphTransformer LayerNormFusionL1 modified: 0 with status: OK
+[12960:2204:0401/121636.557:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [INFO: onnxruntime, graph_transformer.cc:15 onnxruntime::GraphTransformer::Apply] GraphTransformer QDQPropagationTransformer modified: 0 with status: OK
+[12960:2204:0401/121636.557:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [INFO: onnxruntime, graph_transformer.cc:15 onnxruntime::GraphTransformer::Apply] GraphTransformer WeightBiasQuantization modified: 0 with status: OK
+[12960:2204:0401/121636.557:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [INFO: onnxruntime, graph_transformer.cc:15 onnxruntime::GraphTransformer::Apply] GraphTransformer EnsureUniqueDQForNodeUnit modified: 0 with status: OK
+[12960:2204:0401/121636.557:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [INFO: onnxruntime, graph_transformer.cc:15 onnxruntime::GraphTransformer::Apply] GraphTransformer RocmBlasAltImpl modified: 0 with status: OK
+[12960:2204:0401/121636.557:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [INFO: onnxruntime, inference_session.cc:1465 onnxruntime::InferenceSession::TransformGraph] Running graph optimizations in loop 1 time/s (Graph Optimizations Loop Level : 1)
+[12960:2204:0401/121636.557:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [INFO: onnxruntime, graph_transformer.cc:15 onnxruntime::GraphTransformer::Apply] GraphTransformer Level2_RuleBasedTransformer modified: 0 with status: OK
+[12960:2204:0401/121636.557:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [INFO: onnxruntime, graph_transformer.cc:15 onnxruntime::GraphTransformer::Apply] GraphTransformer TransposeOptimizer_CPUExecutionProvider modified: 0 with status: OK
+[12960:2204:0401/121636.557:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [INFO: onnxruntime, graph_transformer.cc:15 onnxruntime::GraphTransformer::Apply] GraphTransformer QDQS8ToU8Transformer modified: 0 with status: OK
+[12960:2204:0401/121636.557:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [INFO: onnxruntime, graph_transformer.cc:15 onnxruntime::GraphTransformer::Apply] GraphTransformer QDQSelectorActionTransformer modified: 0 with status: OK
+[12960:2204:0401/121636.557:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [INFO: onnxruntime, graph_transformer.cc:15 onnxruntime::GraphTransformer::Apply] GraphTransformer GemmActivationFusion modified: 0 with status: OK
+[12960:2204:0401/121636.557:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [INFO: onnxruntime, graph_transformer.cc:15 onnxruntime::GraphTransformer::Apply] GraphTransformer MatMulIntegerToFloatFusion modified: 0 with status: OK
+[12960:2204:0401/121636.557:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [INFO: onnxruntime, graph_transformer.cc:15 onnxruntime::GraphTransformer::Apply] GraphTransformer DynamicQuantizeMatMulFusion modified: 0 with status: OK
+[12960:2204:0401/121636.557:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [INFO: onnxruntime, graph_transformer.cc:15 onnxruntime::GraphTransformer::Apply] GraphTransformer ConvActivationFusion modified: 0 with status: OK
+[12960:2204:0401/121636.557:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [INFO: onnxruntime, graph_transformer.cc:15 onnxruntime::GraphTransformer::Apply] GraphTransformer GeluFusionL2 modified: 0 with status: OK
+[12960:2204:0401/121636.557:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [INFO: onnxruntime, graph_transformer.cc:15 onnxruntime::GraphTransformer::Apply] GraphTransformer LayerNormFusionL2 modified: 0 with status: OK
+[12960:2204:0401/121636.557:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [INFO: onnxruntime, graph_transformer.cc:15 onnxruntime::GraphTransformer::Apply] GraphTransformer SimplifiedLayerNormFusion modified: 0 with status: OK
+[12960:2204:0401/121636.557:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [INFO: onnxruntime, graph_transformer.cc:15 onnxruntime::GraphTransformer::Apply] GraphTransformer AttentionFusion modified: 0 with status: OK
+[12960:2204:0401/121636.557:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [INFO: onnxruntime, graph_transformer.cc:15 onnxruntime::GraphTransformer::Apply] GraphTransformer EmbedLayerNormFusion modified: 0 with status: OK
+[12960:2204:0401/121636.557:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [INFO: onnxruntime, graph_transformer.cc:15 onnxruntime::GraphTransformer::Apply] GraphTransformer GatherSliceToSplitFusion modified: 0 with status: OK
+[12960:2204:0401/121636.557:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [INFO: onnxruntime, graph_transformer.cc:15 onnxruntime::GraphTransformer::Apply] GraphTransformer GatherToSliceFusion modified: 0 with status: OK
+[12960:2204:0401/121636.557:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [INFO: onnxruntime, graph_transformer.cc:15 onnxruntime::GraphTransformer::Apply] GraphTransformer MatmulTransposeFusion modified: 0 with status: OK
+[12960:2204:0401/121636.557:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [INFO: onnxruntime, graph_transformer.cc:15 onnxruntime::GraphTransformer::Apply] GraphTransformer BiasGeluFusion modified: 0 with status: OK
+[12960:2204:0401/121636.557:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [INFO: onnxruntime, graph_transformer.cc:15 onnxruntime::GraphTransformer::Apply] GraphTransformer GroupQueryAttentionFusion modified: 0 with status: OK
+[12960:2204:0401/121636.557:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [INFO: onnxruntime, graph_transformer.cc:15 onnxruntime::GraphTransformer::Apply] GraphTransformer MatMulAddFusion modified: 0 with status: OK
+[12960:2204:0401/121636.557:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [INFO: onnxruntime, graph_transformer.cc:15 onnxruntime::GraphTransformer::Apply] GraphTransformer SkipLayerNormFusion modified: 0 with status: OK
+[12960:2204:0401/121636.557:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [INFO: onnxruntime, graph_transformer.cc:15 onnxruntime::GraphTransformer::Apply] GraphTransformer FastGeluFusion modified: 0 with status: OK
+[12960:2204:0401/121636.557:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [INFO: onnxruntime, graph_transformer.cc:15 onnxruntime::GraphTransformer::Apply] GraphTransformer QuickGeluFusion modified: 0 with status: OK
+[12960:2204:0401/121636.557:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [INFO: onnxruntime, graph_transformer.cc:15 onnxruntime::GraphTransformer::Apply] GraphTransformer BiasSoftmaxFusion modified: 0 with status: OK
+[12960:2204:0401/121636.557:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [INFO: onnxruntime, graph_transformer.cc:15 onnxruntime::GraphTransformer::Apply] GraphTransformer BiasDropoutFusion modified: 0 with status: OK
+[12960:2204:0401/121636.557:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [INFO: onnxruntime, graph_transformer.cc:15 onnxruntime::GraphTransformer::Apply] GraphTransformer MatMulScaleFusion modified: 0 with status: OK
+[12960:2204:0401/121636.557:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [INFO: onnxruntime, graph_transformer.cc:15 onnxruntime::GraphTransformer::Apply] GraphTransformer MatMulActivationFusion modified: 0 with status: OK
+[12960:2204:0401/121636.557:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [INFO: onnxruntime, graph_transformer.cc:15 onnxruntime::GraphTransformer::Apply] GraphTransformer MatMulNBitsFusion modified: 0 with status: OK
+[12960:2204:0401/121636.557:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [INFO: onnxruntime, graph_transformer.cc:15 onnxruntime::GraphTransformer::Apply] GraphTransformer QDQFinalCleanupTransformer modified: 0 with status: OK
+[12960:2204:0401/121636.557:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [INFO: onnxruntime, graph_transformer.cc:15 onnxruntime::GraphTransformer::Apply] GraphTransformer NchwcTransformer modified: 0 with status: OK
+[12960:2204:0401/121636.557:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [INFO: onnxruntime, graph_transformer.cc:15 onnxruntime::GraphTransformer::Apply] GraphTransformer NhwcTransformer modified: 0 with status: OK
+[12960:2204:0401/121636.557:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [INFO: onnxruntime, graph_transformer.cc:15 onnxruntime::GraphTransformer::Apply] GraphTransformer ConvAddActivationFusion modified: 0 with status: OK
+[12960:2204:0401/121636.557:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [INFO: onnxruntime, graph_transformer.cc:15 onnxruntime::GraphTransformer::Apply] GraphTransformer RemoveDuplicateCastTransformer modified: 0 with status: OK
+[12960:2204:0401/121636.557:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [INFO: onnxruntime, graph_transformer.cc:15 onnxruntime::GraphTransformer::Apply] GraphTransformer CastFloat16Transformer modified: 0 with status: OK
+[12960:2204:0401/121636.557:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [INFO: onnxruntime, graph_transformer.cc:15 onnxruntime::GraphTransformer::Apply] GraphTransformer FuseFp16InitializerToFp32NodeTransformer modified: 0 with status: OK
+[12960:2204:0401/121636.557:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [INFO: onnxruntime, graph_transformer.cc:15 onnxruntime::GraphTransformer::Apply] GraphTransformer MemcpyTransformer modified: 0 with status: OK
+[12960:2204:0401/121636.557:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [VERBOSE: onnxruntime, session_state.cc:1296 onnxruntime::VerifyEachNodeIsAssignedToAnEp] Node placements
+[12960:2204:0401/121636.557:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [VERBOSE: onnxruntime, session_state.cc:175 onnxruntime::SessionState::CreateGraphInfo] SaveMLValueNameIndexMapping
+[12960:2204:0401/121636.557:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [VERBOSE: onnxruntime, session_state.cc:221 onnxruntime::SessionState::CreateGraphInfo] Done saving OrtValue mappings.
+[12960:2204:0401/121636.557:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [INFO: onnxruntime, allocation_planner.cc:2659 onnxruntime::IGraphPartitioner::CreateGraphPartitioner] Use DeviceBasedPartition as default
+[12960:2204:0401/121636.557:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [INFO: onnxruntime, session_state_utils.cc:243 onnxruntime::session_state_utils::SaveInitializedTensors] Saving initialized tensors.
+[12960:2204:0401/121636.557:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [INFO: onnxruntime, bfc_arena.cc:334 onnxruntime::BFCArena::AllocateRawInternal] Extending BFCArena for Cpu. bin_num:0 (requested) num_bytes: 16 (actual) rounded_bytes:256
+[12960:2204:0401/121636.557:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [INFO: onnxruntime, bfc_arena.cc:205 onnxruntime::BFCArena::Extend] Extended allocation by 1048576 bytes.
+[12960:2204:0401/121636.557:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [INFO: onnxruntime, bfc_arena.cc:208 onnxruntime::BFCArena::Extend] Total allocated bytes: 1048576
+[12960:2204:0401/121636.557:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [INFO: onnxruntime, bfc_arena.cc:211 onnxruntime::BFCArena::Extend] Allocated memory at 000001D40EB6E080 to 000001D40EC6E080
+[12960:2204:0401/121636.557:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [INFO: onnxruntime, session_state_utils.cc:438 onnxruntime::session_state_utils::SaveInitializedTensors] Done saving initialized tensors
+[12960:2204:0401/121636.557:ERROR:services\webnn\ort\environment.cc:89] : [ORT] [INFO: onnxruntime, inference_session.cc:2532 onnxruntime::InferenceSession::Initialize] Session successfully initialized.
+[12960:9524:0401/121636.558:ERROR:services\webnn\ort\graph_impl_ort.cc:112] : [WebNN] Failed to call ort_api-&gt;Run( session_.get(), nullptr, input_names.data(), input_tensors.data(), input_names.size(), output_names.data(), output_names.size(), output_tensors.data()): [WebNN] ORT status error code: 2 error message: Got invalid dimensions for output: output_0 for the following indices
+ index: 2 Got: 3 Expected: 2
+ index: 3 Got: 3 Expected: 2
+ Please fix either the inputs/outputs or the model.
+[12960:13712:0401/121636.564:ERROR:components\viz\service\gl\exit_code.cc:13] : Restarting GPU process due to unrecoverable error. Context was lost.
+GpuProcessHost: The GPU process crashed! Exit code: RESULT_CODE_GPU_EXIT_ON_CONTEXT_LOST.</pre>
+  </section>
+  
+
+  
+  <section class="card">
+    <h2>Reproduction Script</h2>
+    <p class="hint">Pure WebNN API code — paste into DevTools or use the Run button below.</p>
+    <pre class="code">'use strict';
+
+// ===== Constants =====
+const INT32_MAX = 2147483647;
+const UINT32_MAX = 4294967295;
+const FLOAT32_MAX = 3.4028235e+38;
+const FLOAT32_MIN_SUBNORMAL = 1.401298464324817e-45;
+const FLOAT32_MIN_NORMAL = 1.1754943508222875e-38;
+
+// ===== Data-creation helpers =====
+
+function filledFloat32(shape, value) {
+  const size = Array.isArray(shape) ? shape.reduce((a, b) =&gt; a * b, 1) : shape;
+  return new Float32Array(size).fill(value);
+}
+
+function randomFloat32(shape) {
+  const size = Array.isArray(shape) ? shape.reduce((a, b) =&gt; a * b, 1) : shape;
+  const arr = new Float32Array(size);
+  for (let i = 0; i &lt; size; i++) arr[i] = Math.random() * 2 - 1;
+  return arr;
+}
+
+function adversarialFloat32(shape) {
+  const size = Array.isArray(shape) ? shape.reduce((a, b) =&gt; a * b, 1) : shape;
+  const specials = [
+    NaN, Infinity, -Infinity, 0, -0,
+    FLOAT32_MAX, -FLOAT32_MAX,
+    FLOAT32_MIN_SUBNORMAL, -FLOAT32_MIN_SUBNORMAL,
+    FLOAT32_MIN_NORMAL, -FLOAT32_MIN_NORMAL,
+    1.0, -1.0, 0.5, -0.5,
+  ];
+  const arr = new Float32Array(size);
+  for (let i = 0; i &lt; size; i++) arr[i] = specials[i % specials.length];
+  return arr;
+}
+
+function filledInt32(shape, value) {
+  const size = Array.isArray(shape) ? shape.reduce((a, b) =&gt; a * b, 1) : shape;
+  return new Int32Array(size).fill(value);
+}
+
+function filledUint8(shape, value) {
+  const size = Array.isArray(shape) ? shape.reduce((a, b) =&gt; a * b, 1) : shape;
+  return new Uint8Array(size).fill(value);
+}
+
+function filledInt8(shape, value) {
+  const size = Array.isArray(shape) ? shape.reduce((a, b) =&gt; a * b, 1) : shape;
+  return new Int8Array(size).fill(value);
+}
+
+function filledUint32(shape, value) {
+  const size = Array.isArray(shape) ? shape.reduce((a, b) =&gt; a * b, 1) : shape;
+  return new Uint32Array(size).fill(value);
+}
+
+function interleavedSubnormalFloat32(shape) {
+  const size = Array.isArray(shape) ? shape.reduce((a, b) =&gt; a * b, 1) : shape;
+  const arr = new Float32Array(size);
+  for (let i = 0; i &lt; size; i++) {
+    arr[i] = i % 2 === 0 ? 1.0 : FLOAT32_MIN_SUBNORMAL;
+  }
+  return arr;
+}
+
+function tiledFloat32(shape, values) {
+  const size = Array.isArray(shape) ? shape.reduce((a, b) =&gt; a * b, 1) : shape;
+  const arr = new Float32Array(size);
+  for (let i = 0; i &lt; size; i++) arr[i] = values[i % values.length];
+  return arr;
+}
+
+// ===== Reproduction test =====
+
+async function runTest() {
+  const context = await navigator.ml.createContext({ deviceType: 'cpu' });
+  try {
+    {
+    const builder = new MLGraphBuilder(context);
+    const input = builder.constant(
+              { dataType: 'float32', shape: [1, 1, 7, 7] },
+              randomFloat32([1, 1, 7, 7]));
+            // ceil((7-3)/4+1) = ceil(2) = 2; but stride=4 means the second
+            // window starts at index 4, reading [4,5,6] which is fine.
+            // With larger padding, ceil rounding can create OOB windows.
+    const outputOperand = builder.maxPool2d(input, {
+          windowDimensions: [3, 3],
+          strides: [4, 4],
+          padding: [1, 1, 1, 1],
+          roundingType: 'ceil',
+        });
+    const graph = await builder.build({ output: outputOperand });
+    const outputTensor = await context.createTensor({
+      dataType: outputOperand.dataType,
+      shape: Array.from(outputOperand.shape),
+      readable: true,
+    });
+    try {
+      context.dispatch(graph, {}, { output: outputTensor });
+      const result = await context.readTensor(outputTensor);
+    } finally {
+      outputTensor.destroy();
+      graph.destroy();
+    }
+  }
+    document.getElementById('result').textContent = 'Test completed (no crash)';
+  } catch (e) {
+    document.getElementById('result').textContent = 'Error: ' + e.message;
+    throw e;
+  } finally {
+    try { context.destroy(); } catch(e) { /* ignore */ }
+  }
+}
+
+runTest();</pre>
+  </section>
+
+  <section class="card run-card">
+    <h2>&#9654; Run Test</h2>
+    <p class="hint">Click the button or open this page in Chrome with the launch flags above.</p>
+    <button id="runBtn" onclick="runTest()">Run Test</button>
+    <pre id="result" class="output">Ready to run…</pre>
+  </section>
+</div>
+<script>
+'use strict';
+
+// ===== Constants =====
+const INT32_MAX = 2147483647;
+const UINT32_MAX = 4294967295;
+const FLOAT32_MAX = 3.4028235e+38;
+const FLOAT32_MIN_SUBNORMAL = 1.401298464324817e-45;
+const FLOAT32_MIN_NORMAL = 1.1754943508222875e-38;
+
+// ===== Data-creation helpers =====
+
+function filledFloat32(shape, value) {
+  const size = Array.isArray(shape) ? shape.reduce((a, b) => a * b, 1) : shape;
+  return new Float32Array(size).fill(value);
+}
+
+function randomFloat32(shape) {
+  const size = Array.isArray(shape) ? shape.reduce((a, b) => a * b, 1) : shape;
+  const arr = new Float32Array(size);
+  for (let i = 0; i < size; i++) arr[i] = Math.random() * 2 - 1;
+  return arr;
+}
+
+function adversarialFloat32(shape) {
+  const size = Array.isArray(shape) ? shape.reduce((a, b) => a * b, 1) : shape;
+  const specials = [
+    NaN, Infinity, -Infinity, 0, -0,
+    FLOAT32_MAX, -FLOAT32_MAX,
+    FLOAT32_MIN_SUBNORMAL, -FLOAT32_MIN_SUBNORMAL,
+    FLOAT32_MIN_NORMAL, -FLOAT32_MIN_NORMAL,
+    1.0, -1.0, 0.5, -0.5,
+  ];
+  const arr = new Float32Array(size);
+  for (let i = 0; i < size; i++) arr[i] = specials[i % specials.length];
+  return arr;
+}
+
+function filledInt32(shape, value) {
+  const size = Array.isArray(shape) ? shape.reduce((a, b) => a * b, 1) : shape;
+  return new Int32Array(size).fill(value);
+}
+
+function filledUint8(shape, value) {
+  const size = Array.isArray(shape) ? shape.reduce((a, b) => a * b, 1) : shape;
+  return new Uint8Array(size).fill(value);
+}
+
+function filledInt8(shape, value) {
+  const size = Array.isArray(shape) ? shape.reduce((a, b) => a * b, 1) : shape;
+  return new Int8Array(size).fill(value);
+}
+
+function filledUint32(shape, value) {
+  const size = Array.isArray(shape) ? shape.reduce((a, b) => a * b, 1) : shape;
+  return new Uint32Array(size).fill(value);
+}
+
+function interleavedSubnormalFloat32(shape) {
+  const size = Array.isArray(shape) ? shape.reduce((a, b) => a * b, 1) : shape;
+  const arr = new Float32Array(size);
+  for (let i = 0; i < size; i++) {
+    arr[i] = i % 2 === 0 ? 1.0 : FLOAT32_MIN_SUBNORMAL;
+  }
+  return arr;
+}
+
+function tiledFloat32(shape, values) {
+  const size = Array.isArray(shape) ? shape.reduce((a, b) => a * b, 1) : shape;
+  const arr = new Float32Array(size);
+  for (let i = 0; i < size; i++) arr[i] = values[i % values.length];
+  return arr;
+}
+
+// ===== Reproduction test =====
+
+async function runTest() {
+  const context = await navigator.ml.createContext({ deviceType: 'cpu' });
+  try {
+    {
+    const builder = new MLGraphBuilder(context);
+    const input = builder.constant(
+              { dataType: 'float32', shape: [1, 1, 7, 7] },
+              randomFloat32([1, 1, 7, 7]));
+            // ceil((7-3)/4+1) = ceil(2) = 2; but stride=4 means the second
+            // window starts at index 4, reading [4,5,6] which is fine.
+            // With larger padding, ceil rounding can create OOB windows.
+    const outputOperand = builder.maxPool2d(input, {
+          windowDimensions: [3, 3],
+          strides: [4, 4],
+          padding: [1, 1, 1, 1],
+          roundingType: 'ceil',
+        });
+    const graph = await builder.build({ output: outputOperand });
+    const outputTensor = await context.createTensor({
+      dataType: outputOperand.dataType,
+      shape: Array.from(outputOperand.shape),
+      readable: true,
+    });
+    try {
+      context.dispatch(graph, {}, { output: outputTensor });
+      const result = await context.readTensor(outputTensor);
+    } finally {
+      outputTensor.destroy();
+      graph.destroy();
+    }
+  }
+    document.getElementById('result').textContent = 'Test completed (no crash)';
+  } catch (e) {
+    document.getElementById('result').textContent = 'Error: ' + e.message;
+    throw e;
+  } finally {
+    try { context.destroy(); } catch(e) { /* ignore */ }
+  }
+}
+
+runTest();
+</script>
+
+<div class="footer">WebNN WPT Stress Test &middot; Generated 2026-04-01T04:16:36.710Z</div>
+</body>
+</html>
